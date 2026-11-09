@@ -12,11 +12,8 @@ import {
   onboardRider,
 } from './src/api/backendClient';
 import {
-  sendEmailOtp,
-  sendPhoneOtp,
+  signInOrRegisterWithPassword,
   supabase,
-  verifyEmailOtp,
-  verifyPhoneOtp,
 } from './src/auth/supabase';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
@@ -78,29 +75,16 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  async function handleSendOtp(email: string): Promise<void> {
-    try {
-      setLoading(true);
-      setErrorMessage(null);
-      await sendEmailOtp(email);
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to send email verification code');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleVerifyOtp(
+  async function handleAuthenticate(
     email: string,
-    code: string,
+    password: string,
     fullName: string,
     phoneNumber: string,
   ): Promise<void> {
     try {
       setLoading(true);
       setErrorMessage(null);
-      await verifyEmailOtp(email, code);
+      await signInOrRegisterWithPassword(email, password);
       setAuthenticated(true);
 
       // Attempt to load existing profile or submit initial onboarding
@@ -119,7 +103,7 @@ export default function App(): React.JSX.Element {
         }
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired verification code');
+      setErrorMessage(err instanceof Error ? err.message : 'Authentication failed');
       throw err;
     } finally {
       setLoading(false);
@@ -150,7 +134,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
+      <StatusBar barStyle="light-content" />
 
       {loading && !profile ? (
         <View style={styles.loaderContainer}>
@@ -158,8 +142,7 @@ export default function App(): React.JSX.Element {
         </View>
       ) : !authenticated || !profile ? (
         <AuthScreen
-          onSendOtp={handleSendOtp}
-          onVerifyOtp={handleVerifyOtp}
+          onAuthenticate={handleAuthenticate}
           loading={loading}
           errorMessage={errorMessage}
         />

@@ -1,5 +1,5 @@
 import * as WebBrowser from 'expo-web-browser';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, NativeEventSubscription } from 'react-native';
 import { getSubscriptionStatus, initializeSubscriptionCheckout } from '../api/backendClient';
 import { SubscriptionDetails } from '../types/subscription';
 
@@ -53,7 +53,7 @@ export async function executePaystackSubscriptionPayment(): Promise<Subscription
   const session = await initializeSubscriptionCheckout();
 
   // 2. Listen for app returning to foreground (covers manual browser close)
-  let appStateSubscription: { remove: () => void } | null = null;
+  let appStateSubscription: NativeEventSubscription | null = null;
   const onResumePromise = new Promise<void>((resolve) => {
     appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'active') resolve();
@@ -73,6 +73,8 @@ export async function executePaystackSubscriptionPayment(): Promise<Subscription
     // 5. Poll backend for server-verified credit — this is the authoritative gate
     return await pollBackendUntilActive();
   } finally {
-    appStateSubscription?.remove();
+    if (appStateSubscription) {
+      (appStateSubscription as NativeEventSubscription).remove();
+    }
   }
 }

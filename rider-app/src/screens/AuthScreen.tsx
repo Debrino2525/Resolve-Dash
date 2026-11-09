@@ -13,10 +13,9 @@ import { TactileButton } from '../components/TactileButton';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 
 export interface AuthScreenProps {
-  onSendOtp: (email: string) => Promise<void>;
-  onVerifyOtp: (
+  onAuthenticate: (
     email: string,
-    code: string,
+    password: string,
     fullName: string,
     phoneNumber: string,
   ) => Promise<void>;
@@ -25,36 +24,34 @@ export interface AuthScreenProps {
 }
 
 export function AuthScreen({
-  onSendOtp,
-  onVerifyOtp,
+  onAuthenticate,
   loading,
   errorMessage,
 }: AuthScreenProps): React.JSX.Element {
-  const [step, setStep] = useState<'INPUT' | 'OTP'>('INPUT');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
-  const [otpCode, setOtpCode] = useState('');
 
   const formattedPhoneNumber = `+233${phoneDigits.replace(/^0+/, '')}`;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const isFormValid =
+    isEmailValid &&
+    password.length >= 6 &&
+    fullName.trim().length >= 2 &&
+    phoneDigits.length >= 9;
 
-  const handleInputSubmit = async (): Promise<void> => {
-    if (!isEmailValid || fullName.trim().length < 2 || phoneDigits.length < 9) return;
+  const handleSubmit = async (): Promise<void> => {
+    if (!isFormValid) return;
     try {
-      await onSendOtp(email.trim());
-      setStep('OTP');
+      await onAuthenticate(
+        email.trim(),
+        password,
+        fullName.trim(),
+        formattedPhoneNumber,
+      );
     } catch {
-      // Error is caught and surfaced in parent state banner
-    }
-  };
-
-  const handleOtpSubmit = async (): Promise<void> => {
-    if (otpCode.trim().length < 6) return;
-    try {
-      await onVerifyOtp(email.trim(), otpCode.trim(), fullName.trim(), formattedPhoneNumber);
-    } catch {
-      // Error is caught and surfaced in parent state banner
+      // Error handled and displayed by parent state banner
     }
   };
 
@@ -82,104 +79,77 @@ export function AuthScreen({
           </View>
         )}
 
-        {step === 'INPUT' ? (
-          <View style={styles.authCard}>
-            <Text style={styles.cardTitle}>Rider Dispatch Sign-In</Text>
-            <Text style={styles.cardSubtitle}>
-              Enter your details to receive a 6-digit verification code directly to your email.
-            </Text>
+        <View style={styles.authCard}>
+          <Text style={styles.cardTitle}>Rider Dispatch Sign-In</Text>
+          <Text style={styles.cardSubtitle}>
+            Sign in or create your rider account. Instant access with zero email or SMS delays.
+          </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>FULL LEGAL NAME (FOR GIG ID)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Kofi Mensah"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="words"
-                value={fullName}
-                onChangeText={setFullName}
-              />
-            </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>FULL LEGAL NAME (FOR GIG ID)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. Kofi Mensah"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="words"
+              value={fullName}
+              onChangeText={setFullName}
+            />
+          </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>EMAIL ADDRESS (FOR SECURE OTP)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="rider@example.com"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={email}
-                onChangeText={setEmail}
-              />
-            </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="rider@gmail.com"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={email}
+              onChangeText={setEmail}
+            />
+          </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>MOBILE PHONE (FOR DISPATCH & CALLS)</Text>
-              <View style={styles.phoneInputRow}>
-                <View style={styles.flagPrefix}>
-                  <Text style={styles.flagText}>🇬🇭 +233</Text>
-                </View>
-                <TextInput
-                  style={[styles.textInput, styles.phoneTextInput]}
-                  placeholder="24 123 4567"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  value={phoneDigits}
-                  onChangeText={setPhoneDigits}
-                />
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>PASSWORD (MIN 6 CHARACTERS)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="••••••••"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>MOBILE NUMBER (FOR DISPATCH & CALLS)</Text>
+            <View style={styles.phoneInputRow}>
+              <View style={styles.flagPrefix}>
+                <Text style={styles.flagText}>🇬🇭 +233</Text>
               </View>
-            </View>
-
-            <TactileButton
-              title="Send Verification Code ✉️"
-              variant="primary"
-              onPress={handleInputSubmit}
-              loading={loading}
-              disabled={
-                !isEmailValid || fullName.trim().length < 2 || phoneDigits.length < 9
-              }
-              style={styles.submitButton}
-            />
-          </View>
-        ) : (
-          <View style={styles.authCard}>
-            <Text style={styles.cardTitle}>Enter 6-Digit Passcode</Text>
-            <Text style={styles.cardSubtitle}>
-              Sent to <Text style={styles.emailHighlight}>{email.trim()}</Text>
-            </Text>
-
-            <View style={styles.inputGroup}>
               <TextInput
-                style={styles.otpInput}
-                placeholder="• • • • • •"
+                style={[styles.textInput, styles.phoneTextInput]}
+                placeholder="24 123 4567"
                 placeholderTextColor={Colors.textMuted}
-                keyboardType="number-pad"
-                maxLength={6}
-                value={otpCode}
-                onChangeText={setOtpCode}
+                keyboardType="phone-pad"
+                maxLength={10}
+                value={phoneDigits}
+                onChangeText={setPhoneDigits}
               />
             </View>
-
-            <TactileButton
-              title="Verify & Enter Hub ⚡"
-              variant="primary"
-              onPress={handleOtpSubmit}
-              loading={loading}
-              disabled={otpCode.trim().length < 6}
-              style={styles.submitButton}
-            />
-
-            <TactileButton
-              title="Change Email Address"
-              variant="secondary"
-              onPress={() => setStep('INPUT')}
-              style={styles.backButton}
-            />
           </View>
-        )}
+
+          <TactileButton
+            title="Enter Dispatch Hub ⚡"
+            variant="primary"
+            onPress={handleSubmit}
+            loading={loading}
+            disabled={!isFormValid}
+            style={styles.submitButton}
+          />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -242,10 +212,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     lineHeight: 18,
   },
-  emailHighlight: {
-    color: Colors.dispatchGreen,
-    fontWeight: '700',
-  },
   inputGroup: {
     marginBottom: Spacing.lg,
   },
@@ -284,22 +250,7 @@ const styles = StyleSheet.create({
     flex: 1,
     letterSpacing: 1.5,
   },
-  otpInput: {
-    backgroundColor: Colors.background,
-    borderRadius: Radii.md,
-    borderWidth: 1.5,
-    borderColor: Colors.dispatchGreen,
-    color: Colors.textPrimary,
-    paddingVertical: 18,
-    textAlign: 'center',
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: 8,
-  },
   submitButton: {
-    marginTop: Spacing.sm,
-  },
-  backButton: {
     marginTop: Spacing.sm,
   },
 });

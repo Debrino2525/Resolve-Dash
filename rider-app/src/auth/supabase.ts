@@ -33,6 +33,54 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
 });
 
 /**
+ * Signs in with Email + Password or automatically registers new rider.
+ * Bypasses email rate limits completely when 'Confirm email' is disabled in Supabase.
+ */
+export async function signInOrRegisterWithPassword(
+  email: string,
+  password: string,
+): Promise<Session> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Try sign in first
+  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+    email: cleanEmail,
+    password,
+  });
+
+  if (signInData.session) {
+    return signInData.session;
+  }
+
+  // 2. If user doesn't exist, register them
+  const isUserNotFound =
+    signInError?.message.toLowerCase().includes('invalid login credentials') ||
+    signInError?.message.toLowerCase().includes('user not found');
+
+  if (isUserNotFound) {
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+    });
+
+    if (signUpError) {
+      throw new Error(signUpError.message);
+    }
+
+    if (signUpData.session) {
+      return signUpData.session;
+    }
+
+    // If confirmation is required by Supabase config
+    throw new Error(
+      'Account created! Please check your email or disable "Confirm email" in Supabase Auth settings to log in instantly.',
+    );
+  }
+
+  throw new Error(signInError?.message ?? 'Authentication failed');
+}
+
+/**
  * Initiates Email OTP login via Supabase Auth.
  * Sends a 6-digit confirmation code directly to the rider's email.
  */
