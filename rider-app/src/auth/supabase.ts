@@ -71,10 +71,17 @@ export async function signInOrRegisterWithPassword(
       return signUpData.session;
     }
 
-    // If confirmation is required by Supabase config
-    throw new Error(
-      'Account created! Please check your email or disable "Confirm email" in Supabase Auth settings to log in instantly.',
-    );
+    // Fallback: sign in immediately with the new credentials
+    const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+
+    if (retryData.session) {
+      return retryData.session;
+    }
+
+    throw new Error(retryError?.message ?? 'Account created. Please tap Enter Dispatch Hub again.');
   }
 
   throw new Error(signInError?.message ?? 'Authentication failed');
