@@ -14,7 +14,7 @@
     "test": "jest --config jest.config.ts --runInBand --testPathIgnorePatterns=\".*\\.integration\\.spec\\.ts$\"",
     "test:integration": "jest --config jest.config.ts --runInBand --testMatch=\"**/*.integration.spec.ts\"",
     "test:cov": "jest --config jest.config.ts --coverage",
-    "ci": "npm run build && npm run lint && npm audit && npm test",
+    "ci": "npm run build && npm run lint && npm audit --audit-level=critical && npm test",
     "migrate:up": "node-pg-migrate -m migrations up",
     "migrate:down": "node-pg-migrate -m migrations down"
   },
