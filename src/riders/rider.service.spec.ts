@@ -30,7 +30,7 @@ describe('RiderService', () => {
     it('throws BadRequestException if phone number is missing or invalid', async () => {
       await expect(
         service.onboard(RIDER_ID, undefined, null, { fullName: 'Kofi Mensah' }),
-      ).rejects.toThrow('Authenticated user must have a verified phone number');
+      ).rejects.toThrow('Rider must have a verified phone number or provide one');
 
       await expect(
         service.onboard(RIDER_ID, '0201234567', null, { fullName: 'Kofi Mensah' }),

@@ -13,8 +13,13 @@ import { TactileButton } from '../components/TactileButton';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 
 export interface AuthScreenProps {
-  onSendOtp: (phoneNumber: string) => Promise<void>;
-  onVerifyOtp: (phoneNumber: string, code: string, fullName: string) => Promise<void>;
+  onSendOtp: (email: string) => Promise<void>;
+  onVerifyOtp: (
+    email: string,
+    code: string,
+    fullName: string,
+    phoneNumber: string,
+  ) => Promise<void>;
   loading: boolean;
   errorMessage: string | null;
 }
@@ -25,22 +30,32 @@ export function AuthScreen({
   loading,
   errorMessage,
 }: AuthScreenProps): React.JSX.Element {
-  const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
-  const [phoneDigits, setPhoneDigits] = useState('');
+  const [step, setStep] = useState<'INPUT' | 'OTP'>('INPUT');
+  const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
+  const [phoneDigits, setPhoneDigits] = useState('');
   const [otpCode, setOtpCode] = useState('');
 
   const formattedPhoneNumber = `+233${phoneDigits.replace(/^0+/, '')}`;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
-  const handlePhoneSubmit = async (): Promise<void> => {
-    if (phoneDigits.length < 9) return;
-    await onSendOtp(formattedPhoneNumber);
-    setStep('OTP');
+  const handleInputSubmit = async (): Promise<void> => {
+    if (!isEmailValid || fullName.trim().length < 2 || phoneDigits.length < 9) return;
+    try {
+      await onSendOtp(email.trim());
+      setStep('OTP');
+    } catch {
+      // Error is caught and surfaced in parent state banner
+    }
   };
 
   const handleOtpSubmit = async (): Promise<void> => {
-    if (otpCode.length < 6) return;
-    await onVerifyOtp(formattedPhoneNumber, otpCode, fullName);
+    if (otpCode.trim().length < 6) return;
+    try {
+      await onVerifyOtp(email.trim(), otpCode.trim(), fullName.trim(), formattedPhoneNumber);
+    } catch {
+      // Error is caught and surfaced in parent state banner
+    }
   };
 
   return (
@@ -67,11 +82,11 @@ export function AuthScreen({
           </View>
         )}
 
-        {step === 'PHONE' ? (
+        {step === 'INPUT' ? (
           <View style={styles.authCard}>
-            <Text style={styles.cardTitle}>Rider Mobile Login</Text>
+            <Text style={styles.cardTitle}>Rider Dispatch Sign-In</Text>
             <Text style={styles.cardSubtitle}>
-              Enter your mobile number to receive a secure 6-digit dispatch access code via SMS.
+              Enter your details to receive a 6-digit verification code directly to your email.
             </Text>
 
             <View style={styles.inputGroup}>
@@ -80,13 +95,28 @@ export function AuthScreen({
                 style={styles.textInput}
                 placeholder="e.g. Kofi Mensah"
                 placeholderTextColor={Colors.textMuted}
+                autoCapitalize="words"
                 value={fullName}
                 onChangeText={setFullName}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER (GHANA)</Text>
+              <Text style={styles.inputLabel}>EMAIL ADDRESS (FOR SECURE OTP)</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="rider@example.com"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>MOBILE PHONE (FOR DISPATCH & CALLS)</Text>
               <View style={styles.phoneInputRow}>
                 <View style={styles.flagPrefix}>
                   <Text style={styles.flagText}>🇬🇭 +233</Text>
@@ -104,11 +134,13 @@ export function AuthScreen({
             </View>
 
             <TactileButton
-              title="Send Verification SMS 📲"
+              title="Send Verification Code ✉️"
               variant="primary"
-              onPress={handlePhoneSubmit}
+              onPress={handleInputSubmit}
               loading={loading}
-              disabled={phoneDigits.length < 9 || fullName.trim().length < 2}
+              disabled={
+                !isEmailValid || fullName.trim().length < 2 || phoneDigits.length < 9
+              }
               style={styles.submitButton}
             />
           </View>
@@ -116,7 +148,7 @@ export function AuthScreen({
           <View style={styles.authCard}>
             <Text style={styles.cardTitle}>Enter 6-Digit Passcode</Text>
             <Text style={styles.cardSubtitle}>
-              Sent to <Text style={styles.phoneHighlight}>{formattedPhoneNumber}</Text>
+              Sent to <Text style={styles.emailHighlight}>{email.trim()}</Text>
             </Text>
 
             <View style={styles.inputGroup}>
@@ -136,14 +168,14 @@ export function AuthScreen({
               variant="primary"
               onPress={handleOtpSubmit}
               loading={loading}
-              disabled={otpCode.length < 6}
+              disabled={otpCode.trim().length < 6}
               style={styles.submitButton}
             />
 
             <TactileButton
-              title="Change Phone Number"
+              title="Change Email Address"
               variant="secondary"
-              onPress={() => setStep('PHONE')}
+              onPress={() => setStep('INPUT')}
               style={styles.backButton}
             />
           </View>
@@ -210,7 +242,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     lineHeight: 18,
   },
-  phoneHighlight: {
+  emailHighlight: {
     color: Colors.dispatchGreen,
     fontWeight: '700',
   },

@@ -45,13 +45,16 @@ async function authenticatedFetch<T>(path: string, options: RequestInit = {}): P
 }
 
 /**
- * Submits initial onboarding profile after phone OTP verification.
+ * Submits initial onboarding profile after authentication.
  * Creates rider row with status 'PENDING_VERIFICATION'.
  */
-export async function onboardRider(fullName: string): Promise<RiderProfile> {
+export async function onboardRider(
+  fullName: string,
+  phoneNumber?: string,
+): Promise<RiderProfile> {
   return authenticatedFetch<RiderProfile>('/riders/onboard', {
     method: 'POST',
-    body: JSON.stringify({ fullName }),
+    body: JSON.stringify({ fullName, phoneNumber }),
   });
 }
 

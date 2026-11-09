@@ -6,6 +6,7 @@ import { RiderService } from './rider.service';
 
 export interface OnboardRequestBody {
   fullName: string;
+  phoneNumber?: string;
 }
 
 export interface RiderProfileResponse {

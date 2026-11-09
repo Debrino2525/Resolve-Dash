@@ -33,6 +33,40 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
 });
 
 /**
+ * Initiates Email OTP login via Supabase Auth.
+ * Sends a 6-digit confirmation code directly to the rider's email.
+ */
+export async function sendEmailOtp(email: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim().toLowerCase(),
+    options: {
+      shouldCreateUser: true,
+    },
+  });
+
+  if (error) {
+    throw new Error(`Failed to send email verification code: ${error.message}`);
+  }
+}
+
+/**
+ * Verifies the 6-digit OTP token sent to the rider's email.
+ */
+export async function verifyEmailOtp(email: string, token: string): Promise<Session> {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: token.trim(),
+    type: 'email',
+  });
+
+  if (error || !data.session) {
+    throw new Error(`Invalid or expired verification code: ${error?.message ?? 'No session returned'}`);
+  }
+
+  return data.session;
+}
+
+/**
  * Initiates Phone OTP login via Supabase Auth.
  * Phone number must be in E.164 format (e.g. +233241234567).
  */

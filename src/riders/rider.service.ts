@@ -4,6 +4,7 @@ import { RiderRepository } from './rider.repository';
 
 export interface OnboardRiderDto {
   fullName: string;
+  phoneNumber?: string;
 }
 
 @Injectable()
@@ -12,7 +13,7 @@ export class RiderService {
 
   async onboard(
     userId: string,
-    phoneNumber: string | undefined,
+    jwtPhoneNumber: string | undefined,
     email: string | null,
     dto: OnboardRiderDto,
   ): Promise<Rider> {
@@ -21,18 +22,19 @@ export class RiderService {
       throw new BadRequestException('Full name must be at least 2 characters long');
     }
 
-    if (!phoneNumber) {
-      throw new BadRequestException('Authenticated user must have a verified phone number');
+    const effectivePhone = jwtPhoneNumber || dto.phoneNumber;
+    if (!effectivePhone) {
+      throw new BadRequestException('Rider must have a verified phone number or provide one');
     }
 
     const e164Regex = /^\+[1-9]\d{1,14}$/;
-    if (!e164Regex.test(phoneNumber)) {
+    if (!e164Regex.test(effectivePhone)) {
       throw new BadRequestException(
-        `Phone number ${phoneNumber} does not match valid E.164 format`,
+        `Phone number ${effectivePhone} does not match valid E.164 format`,
       );
     }
 
-    return this.riderRepository.createRiderProfile(userId, phoneNumber, email, trimmedName);
+    return this.riderRepository.createRiderProfile(userId, effectivePhone, email, trimmedName);
   }
 
   async getProfile(userId: string): Promise<Rider> {

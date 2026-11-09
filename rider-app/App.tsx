@@ -11,7 +11,13 @@ import {
   getSubscriptionStatus,
   onboardRider,
 } from './src/api/backendClient';
-import { sendPhoneOtp, supabase, verifyPhoneOtp } from './src/auth/supabase';
+import {
+  sendEmailOtp,
+  sendPhoneOtp,
+  supabase,
+  verifyEmailOtp,
+  verifyPhoneOtp,
+} from './src/auth/supabase';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { PendingVerificationScreen } from './src/screens/PendingVerificationScreen';
@@ -72,13 +78,13 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  async function handleSendOtp(phoneNumber: string): Promise<void> {
+  async function handleSendOtp(email: string): Promise<void> {
     try {
       setLoading(true);
       setErrorMessage(null);
-      await sendPhoneOtp(phoneNumber);
+      await sendEmailOtp(email);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to send SMS OTP');
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to send email verification code');
       throw err;
     } finally {
       setLoading(false);
@@ -86,14 +92,15 @@ export default function App(): React.JSX.Element {
   }
 
   async function handleVerifyOtp(
-    phoneNumber: string,
+    email: string,
     code: string,
     fullName: string,
+    phoneNumber: string,
   ): Promise<void> {
     try {
       setLoading(true);
       setErrorMessage(null);
-      await verifyPhoneOtp(phoneNumber, code);
+      await verifyEmailOtp(email, code);
       setAuthenticated(true);
 
       // Attempt to load existing profile or submit initial onboarding
@@ -107,12 +114,12 @@ export default function App(): React.JSX.Element {
       } catch {
         // Create initial rider profile with PENDING_VERIFICATION status
         if (fullName) {
-          const newProfile = await onboardRider(fullName);
+          const newProfile = await onboardRider(fullName, phoneNumber);
           setProfile(newProfile);
         }
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired OTP code');
+      setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired verification code');
       throw err;
     } finally {
       setLoading(false);
