@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, Session } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -13,72 +13,19 @@ if (!supabasePublishableKey) {
 }
 
 /**
- * Large Value Chunking Storage Adapter for Expo SecureStore.
+ * Uses AsyncStorage for Supabase session persistence in Expo Go.
  *
- * ANDROID 2048-BYTE LIMIT MITIGATION:
- * On Android, Expo SecureStore stores values in encrypted SharedPreferences with
- * a hard 2048-byte (2 KB) value size limit per key. Supabase Auth session payloads
- * containing user metadata or multiple JWT claims can easily exceed 2 KB.
+ * NOTE ON EXPO GO vs PRODUCTION BUILD:
+ * - Expo Go: expo-secure-store is not available; AsyncStorage is the correct storage adapter.
+ * - Production standalone build: Migrate to ChunkedSecureStoreAdapter (see SETUP.md §6)
+ *   to get hardware-backed encrypted storage. AsyncStorage is plaintext on disk.
  *
- * This adapter splits values larger than 1800 bytes into indexed chunks (key.0, key.1...)
- * and reconstructs them transparently on retrieval, adhering to official Supabase/Expo guidance.
+ * AsyncStorage supports values up to ~6 MB on both iOS and Android — well above
+ * the size of any Supabase JWT session payload.
  */
-const CHUNK_SIZE = 1800;
-
-const ChunkedSecureStoreAdapter = {
-  getItem: async (key: string): Promise<string | null> => {
-    // Check if chunk count index exists
-    const countStr = await SecureStore.getItemAsync(`${key}.chunks`);
-    if (!countStr) {
-      // Legacy or single small item
-      return SecureStore.getItemAsync(key);
-    }
-
-    const chunkCount = parseInt(countStr, 10);
-    const chunks: string[] = [];
-    for (let i = 0; i < chunkCount; i++) {
-      const chunk = await SecureStore.getItemAsync(`${key}.${i}`);
-      if (!chunk) return null;
-      chunks.push(chunk);
-    }
-    return chunks.join('');
-  },
-
-  setItem: async (key: string, value: string): Promise<void> => {
-    if (value.length <= CHUNK_SIZE) {
-      // Small payload: clear any prior chunk metadata and write directly
-      await SecureStore.deleteItemAsync(`${key}.chunks`);
-      return SecureStore.setItemAsync(key, value);
-    }
-
-    // Split across chunks
-    const chunkCount = Math.ceil(value.length / CHUNK_SIZE);
-    await SecureStore.setItemAsync(`${key}.chunks`, String(chunkCount));
-
-    for (let i = 0; i < chunkCount; i++) {
-      const chunk = value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      await SecureStore.setItemAsync(`${key}.${i}`, chunk);
-    }
-    // Delete base key if previously existed
-    await SecureStore.deleteItemAsync(key);
-  },
-
-  removeItem: async (key: string): Promise<void> => {
-    const countStr = await SecureStore.getItemAsync(`${key}.chunks`);
-    if (countStr) {
-      const chunkCount = parseInt(countStr, 10);
-      for (let i = 0; i < chunkCount; i++) {
-        await SecureStore.deleteItemAsync(`${key}.${i}`);
-      }
-      await SecureStore.deleteItemAsync(`${key}.chunks`);
-    }
-    await SecureStore.deleteItemAsync(key);
-  },
-};
-
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
-    storage: ChunkedSecureStoreAdapter,
+    storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -102,10 +49,7 @@ export async function sendPhoneOtp(phoneNumber: string): Promise<void> {
 /**
  * Verifies the 6-digit SMS OTP token for the phone number.
  */
-export async function verifyPhoneOtp(
-  phoneNumber: string,
-  token: string,
-): Promise<Session> {
+export async function verifyPhoneOtp(phoneNumber: string, token: string): Promise<Session> {
   const { data, error } = await supabase.auth.verifyOtp({
     phone: phoneNumber,
     token,

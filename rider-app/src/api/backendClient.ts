@@ -1,21 +1,25 @@
 import { getValidAccessToken } from '../auth/supabase';
-import {
-  RiderProfile,
-  SubscriptionDetails,
-  CheckoutSessionResponse,
-} from '../types/subscription';
 import { toPesewas } from '../types/money';
+import { CheckoutSessionResponse, RiderProfile, SubscriptionDetails } from '../types/subscription';
 
-// Default to local backend during development; configurable without public env leak
-const DEFAULT_API_BASE_URL = 'http://localhost:3000';
+/**
+ * Backend API base URL.
+ *
+ * EXPO GO ON A PHYSICAL DEVICE:
+ * 'localhost' resolves to the device itself, not your dev machine.
+ * Set EXPO_PUBLIC_API_URL to your machine's local IP, e.g.:
+ *   EXPO_PUBLIC_API_URL=http://192.168.1.42:3000
+ * Find it with `ipconfig` (Windows) or `ifconfig` (Mac/Linux).
+ *
+ * PRODUCTION:
+ *   EXPO_PUBLIC_API_URL=https://api.ghanadash.com
+ */
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
 
-async function authenticatedFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function authenticatedFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getValidAccessToken();
 
-  const response = await fetch(`${DEFAULT_API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -33,9 +37,7 @@ async function authenticatedFetch<T>(
 
   if (!response.ok) {
     const errorMsg =
-      body.error?.message ??
-      body.message ??
-      `HTTP request failed with status ${response.status}`;
+      body.error?.message ?? body.message ?? `HTTP request failed with status ${response.status}`;
     throw new Error(errorMsg);
   }
 
@@ -58,9 +60,7 @@ export async function onboardRider(fullName: string): Promise<RiderProfile> {
  * Screen state must be determined from this response, never client-decoded JWT claims.
  */
 export async function getRiderProfile(): Promise<RiderProfile> {
-  return authenticatedFetch<RiderProfile>('/riders/me', {
-    method: 'GET',
-  });
+  return authenticatedFetch<RiderProfile>('/riders/me', { method: 'GET' });
 }
 
 /**
@@ -76,9 +76,7 @@ export async function getSubscriptionStatus(): Promise<SubscriptionDetails> {
     canAcceptOrders: boolean;
     pricePesewas: number;
     serverTime: string;
-  }>('/subscriptions/me', {
-    method: 'GET',
-  });
+  }>('/subscriptions/me', { method: 'GET' });
 
   return {
     ...result,
@@ -88,13 +86,11 @@ export async function getSubscriptionStatus(): Promise<SubscriptionDetails> {
 
 /**
  * Initializes a prepaid weekly Paystack hosted checkout session.
- * Deep link callback is registered as 'ghanadash-rider://subscription-callback'.
+ * The backend passes an HTTPS callback URL to Paystack (custom schemes are rejected).
  */
 export async function initializeSubscriptionCheckout(): Promise<CheckoutSessionResponse> {
   return authenticatedFetch<CheckoutSessionResponse>('/subscriptions/initialize', {
     method: 'POST',
-    body: JSON.stringify({
-      callbackUrl: 'ghanadash-rider://subscription-callback',
-    }),
+    body: JSON.stringify({}),
   });
 }

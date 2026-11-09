@@ -1,89 +1,78 @@
-import { AppState, AppStateStatus } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import {
-  initializeSubscriptionCheckout,
-  getSubscriptionStatus,
-} from '../api/backendClient';
+import { AppState, AppStateStatus } from 'react-native';
+import { getSubscriptionStatus, initializeSubscriptionCheckout } from '../api/backendClient';
 import { SubscriptionDetails } from '../types/subscription';
 
 /**
- * PAYSTACK CUSTOM-SCHEME CALLBACK URL RESTRICTION:
- * Paystack's API validates the callback_url parameter against RFC HTTP/HTTPS schemes.
- * Directly passing a custom URI scheme (such as 'ghanadash-rider://...') to Paystack
- * will cause Paystack's API to return a 400 Bad Request error: "Invalid callback_url".
+ * EXPO GO COMPATIBILITY NOTE:
+ * In Expo Go the custom scheme ghanadash-rider:// is not registered, so
+ * WebBrowser.openAuthSessionAsync cannot auto-dismiss on the Paystack redirect.
+ * We use openBrowserAsync instead: the user completes payment in the in-app browser,
+ * closes it manually (or the backend redirect HTML auto-closes it via window.close()),
+ * and then we poll the backend for authoritative status.
  *
- * THE STANDARD ARCHITECTURAL BRIDGE:
- * 1. The backend passes an HTTPS endpoint as callback_url (e.g. https://api.yourdomain.com/subscriptions/callback).
- * 2. When payment completes, Paystack redirects the browser to that HTTPS URL.
- * 3. That backend web route serves an HTTP 302 or HTML redirect to 'ghanadash-rider://subscription-callback',
- *    which safely launches the mobile app back into the foreground.
+ * PRODUCTION (standalone build):
+ * Switch back to openAuthSessionAsync(url, 'ghanadash-rider://subscription-callback')
+ * and register the scheme in app.json. The browser will auto-dismiss on redirect,
+ * giving a faster UX signal. Polling still runs either way — the deep link is
+ * purely cosmetic; access is NEVER granted based on it locally.
  */
 
-// Stepped fibonacci backoff intervals (total polling window ~32 seconds)
-const BACKOFF_INTERVALS_MS = [1000, 2000, 3000, 5000, 8000, 13000];
+// Fibonacci-stepped backoff: total coverage ~32 seconds after browser close
+const BACKOFF_INTERVALS_MS = [1_000, 2_000, 3_000, 5_000, 8_000, 13_000];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Polls the backend authoritative subscription endpoint with progressive backoff.
+ * Polls the backend with progressive backoff until canAcceptOrders is true
+ * or all intervals are exhausted.
  */
 async function pollBackendUntilActive(): Promise<SubscriptionDetails> {
   let latest = await getSubscriptionStatus();
-  if (latest.canAcceptOrders) {
-    return latest;
-  }
+  if (latest.canAcceptOrders) return latest;
 
   for (const interval of BACKOFF_INTERVALS_MS) {
     await sleep(interval);
     latest = await getSubscriptionStatus();
-    if (latest.canAcceptOrders) {
-      return latest;
-    }
+    if (latest.canAcceptOrders) return latest;
   }
 
   return latest;
 }
 
 /**
- * Initiates the Paystack hosted checkout session and opens the secure browser sheet.
+ * Opens a Paystack hosted checkout session and polls the backend afterward.
  *
- * CRITICAL PROCESS & SECURITY RULE:
- * The return deep link ('ghanadash-rider://subscription-callback') is treated
- * STRICTLY as a UX return trigger. The mobile client NEVER grants access or marks
- * a subscription active locally. Access is granted ONLY by the backend's response.
+ * SECURITY INVARIANT: The mobile client NEVER grants access locally.
+ * canAcceptOrders is sourced exclusively from the backend response.
  */
 export async function executePaystackSubscriptionPayment(): Promise<SubscriptionDetails> {
-  // 1. Initialize checkout session from backend
+  // 1. Ask backend to initialize the checkout session
   const session = await initializeSubscriptionCheckout();
 
-  // 2. Setup AppState listener to trigger immediate re-check when app returns from background
+  // 2. Listen for app returning to foreground (covers manual browser close)
   let appStateSubscription: { remove: () => void } | null = null;
   const onResumePromise = new Promise<void>((resolve) => {
-    appStateSubscription = AppState.addEventListener(
-      'change',
-      (nextState: AppStateStatus) => {
-        if (nextState === 'active') {
-          resolve();
-        }
-      },
-    );
+    appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') resolve();
+    });
   });
 
   try {
-    // 3. Open browser session
-    const redirectUrl = 'ghanadash-rider://subscription-callback';
-    await WebBrowser.openAuthSessionAsync(session.authorizationUrl, redirectUrl);
+    // 3. Open Paystack in an in-app browser. Works in Expo Go and production builds.
+    //    In Expo Go there is no auto-dismiss on redirect — user taps "Done".
+    //    In a standalone build with the custom scheme registered, replace with:
+    //    await WebBrowser.openAuthSessionAsync(session.authorizationUrl, 'ghanadash-rider://subscription-callback');
+    await WebBrowser.openBrowserAsync(session.authorizationUrl);
 
-    // 4. Wait for either browser close or app resume event
+    // 4. Wait up to 500 ms for app-resume signal (may already have fired on browser close)
     await Promise.race([onResumePromise, sleep(500)]);
 
-    // 5. Poll backend for server-verified credit (with stepped backoff)
+    // 5. Poll backend for server-verified credit — this is the authoritative gate
     return await pollBackendUntilActive();
   } finally {
-    if (appStateSubscription) {
-      (appStateSubscription as { remove: () => void }).remove();
-    }
+    appStateSubscription?.remove();
   }
 }
