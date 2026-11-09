@@ -8,6 +8,7 @@ import { RiderController } from '../src/riders/rider.controller';
 import { RiderService } from '../src/riders/rider.service';
 import { SubscriptionController } from '../src/subscriptions/subscription.controller';
 import { SubscriptionService } from '../src/subscriptions/subscription.service';
+import { WebhooksController } from '../src/webhooks/webhooks.controller';
 
 describe('Controllers E2E Integration', () => {
   let app: INestApplication;
@@ -55,7 +56,7 @@ describe('Controllers E2E Integration', () => {
     } as unknown as jest.Mocked<SubscriptionService>;
 
     @Module({
-      controllers: [RiderController, SubscriptionController],
+      controllers: [RiderController, SubscriptionController, WebhooksController],
       providers: [
         { provide: RiderService, useValue: mockRiderService },
         { provide: SubscriptionService, useValue: mockSubscriptionService },
@@ -201,6 +202,24 @@ describe('Controllers E2E Integration', () => {
         .expect(200);
 
       expect(res.text).toContain('ghanadash-rider://subscription-callback?reference=sub_ref_999');
+    });
+  });
+
+  describe('POST /webhooks/paystack', () => {
+    it('forwards raw body and signature header to SubscriptionService', async () => {
+      mockSubscriptionService.handleWebhook.mockResolvedValue({
+        received: true,
+        credited: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/webhooks/paystack')
+        .set('x-paystack-signature', 'test-sig-123')
+        .send({ event: 'charge.success', data: { reference: 'ref-1' } })
+        .expect(200);
+
+      expect(res.body).toEqual({ received: true, credited: true });
+      expect(mockSubscriptionService.handleWebhook).toHaveBeenCalled();
     });
   });
 });

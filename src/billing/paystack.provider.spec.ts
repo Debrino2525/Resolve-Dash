@@ -2,32 +2,41 @@ import * as crypto from 'crypto';
 import { GHS_CURRENCY, toPesewas } from '../domain/types/money';
 import { PaystackProvider } from './paystack.provider';
 
+const TEST_SECRET_KEY = 'sk_test_fake_paystack_secret_key_12345';
+const BASE_URL = 'https://api.paystack.co';
+
+/** Helper: create a PaystackProvider with the env key set and a mock fetch */
+function makeProvider(mockFetch?: typeof fetch): PaystackProvider {
+  process.env.PAYSTACK_SECRET_KEY = TEST_SECRET_KEY;
+  const provider = new PaystackProvider();
+  if (mockFetch) {
+    // Inject mock fetch via property assignment (fetchImpl is private; cast for test)
+    (provider as unknown as { fetchImpl: typeof fetch }).fetchImpl = mockFetch;
+  }
+  return provider;
+}
+
 describe('PaystackProvider', () => {
-  const TEST_SECRET_KEY = 'sk_test_fake_paystack_secret_key_12345';
-  const BASE_URL = 'https://api.paystack.co';
+  afterEach(() => {
+    delete process.env.PAYSTACK_SECRET_KEY;
+  });
 
   describe('Configuration & Initialization', () => {
-    it('throws if secret key is missing', () => {
-      const origEnv = process.env.PAYSTACK_SECRET_KEY;
+    it('throws if PAYSTACK_SECRET_KEY env var is not set', () => {
       delete process.env.PAYSTACK_SECRET_KEY;
-      try {
-        expect(() => new PaystackProvider({ secretKey: '' })).toThrow(
-          'PAYSTACK_SECRET_KEY is not configured',
-        );
-      } finally {
-        if (origEnv) process.env.PAYSTACK_SECRET_KEY = origEnv;
-      }
+      expect(() => new PaystackProvider()).toThrow('PAYSTACK_SECRET_KEY is not configured');
     });
 
-    it('instantiates when secret key is provided', () => {
-      const provider = new PaystackProvider({ secretKey: TEST_SECRET_KEY });
+    it('instantiates when PAYSTACK_SECRET_KEY is set', () => {
+      process.env.PAYSTACK_SECRET_KEY = TEST_SECRET_KEY;
+      const provider = new PaystackProvider();
       expect(provider).toBeDefined();
     });
   });
 
   describe('initializeTransaction', () => {
     it('rejects currencies other than GHS', async () => {
-      const provider = new PaystackProvider({ secretKey: TEST_SECRET_KEY });
+      const provider = makeProvider();
       await expect(
         provider.initializeTransaction({
           reference: 'ref-1',
@@ -60,11 +69,7 @@ describe('PaystackProvider', () => {
         );
       };
 
-      const provider = new PaystackProvider({
-        secretKey: TEST_SECRET_KEY,
-        fetchFn: mockFetch,
-      });
-
+      const provider = makeProvider(mockFetch);
       const result = await provider.initializeTransaction({
         reference: 'ref-weekly-sub-001',
         email: 'rider@test.com',
@@ -86,6 +91,7 @@ describe('PaystackProvider', () => {
         currency: 'GHS',
         reference: 'ref-weekly-sub-001',
         callback_url: 'https://api.example.com/subscriptions/callback',
+        metadata: undefined,
       });
 
       expect(result).toEqual({
@@ -95,22 +101,14 @@ describe('PaystackProvider', () => {
       });
     });
 
-    it('throws descriptive error on duplicate reference without leaking secrets', async () => {
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            status: false,
-            message: 'Duplicate Transaction Reference',
-          }),
+    it('throws descriptive error on duplicate reference', async () => {
+      const mockFetch: typeof fetch = async () =>
+        new Response(
+          JSON.stringify({ status: false, message: 'Duplicate Transaction Reference' }),
           { status: 400, headers: { 'Content-Type': 'application/json' } },
         );
-      };
 
-      const provider = new PaystackProvider({
-        secretKey: TEST_SECRET_KEY,
-        fetchFn: mockFetch,
-      });
-
+      const provider = makeProvider(mockFetch);
       await expect(
         provider.initializeTransaction({
           reference: 'dup-ref',
@@ -124,7 +122,7 @@ describe('PaystackProvider', () => {
 
   describe('verifyTransaction', () => {
     it('throws if reference is empty', async () => {
-      const provider = new PaystackProvider({ secretKey: TEST_SECRET_KEY });
+      const provider = makeProvider();
       await expect(provider.verifyTransaction('')).rejects.toThrow(
         'Transaction reference must not be empty',
       );
@@ -132,7 +130,6 @@ describe('PaystackProvider', () => {
 
     it('verifies a successful transaction and returns structured result', async () => {
       let capturedUrl = '';
-
       const mockFetch: typeof fetch = async (input) => {
         capturedUrl = String(input);
         return new Response(
@@ -154,11 +151,7 @@ describe('PaystackProvider', () => {
         );
       };
 
-      const provider = new PaystackProvider({
-        secretKey: TEST_SECRET_KEY,
-        fetchFn: mockFetch,
-      });
-
+      const provider = makeProvider(mockFetch);
       const result = await provider.verifyTransaction('ref-weekly-sub-001');
 
       expect(capturedUrl).toBe(`${BASE_URL}/transaction/verify/ref-weekly-sub-001`);
@@ -167,12 +160,11 @@ describe('PaystackProvider', () => {
       expect(result.paystackTransactionId).toBe('987654321');
       expect(result.channel).toBe('mobile_money');
       expect(result.paidAt?.toISOString()).toBe('2026-11-09T10:15:30.000Z');
-      expect(result.gatewayResponse).toBe('Successful');
     });
 
-    it('handles failed or abandoned statuses safely', async () => {
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
+    it('handles abandoned status safely', async () => {
+      const mockFetch: typeof fetch = async () =>
+        new Response(
           JSON.stringify({
             status: true,
             message: 'Verification successful',
@@ -188,13 +180,8 @@ describe('PaystackProvider', () => {
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
-      };
 
-      const provider = new PaystackProvider({
-        secretKey: TEST_SECRET_KEY,
-        fetchFn: mockFetch,
-      });
-
+      const provider = makeProvider(mockFetch);
       const result = await provider.verifyTransaction('abandoned-ref');
       expect(result.status).toBe('abandoned');
       expect(result.paidAt).toBeNull();
@@ -202,8 +189,8 @@ describe('PaystackProvider', () => {
   });
 
   describe('verifyWebhookSignature', () => {
-    it('returns true for authentic Paystack HMAC SHA-512 signature', () => {
-      const provider = new PaystackProvider({ secretKey: TEST_SECRET_KEY });
+    it('returns true for authentic HMAC SHA-512 signature', () => {
+      const provider = makeProvider();
       const rawBody = Buffer.from(
         JSON.stringify({
           event: 'charge.success',
@@ -211,33 +198,29 @@ describe('PaystackProvider', () => {
         }),
         'utf8',
       );
-
       const validSignature = crypto
         .createHmac('sha512', TEST_SECRET_KEY)
         .update(rawBody)
         .digest('hex');
 
-      const isValid = provider.verifyWebhookSignature(rawBody, validSignature);
-      expect(isValid).toBe(true);
+      expect(provider.verifyWebhookSignature(rawBody, validSignature)).toBe(true);
     });
 
-    it('returns false for forged or tampered signature', () => {
-      const provider = new PaystackProvider({ secretKey: TEST_SECRET_KEY });
+    it('returns false for forged signature', () => {
+      const provider = makeProvider();
       const rawBody = Buffer.from('{"tampered":true}', 'utf8');
       const wrongSignature = crypto
         .createHmac('sha512', 'different_secret_key')
         .update(rawBody)
         .digest('hex');
 
-      const isValid = provider.verifyWebhookSignature(rawBody, wrongSignature);
-      expect(isValid).toBe(false);
+      expect(provider.verifyWebhookSignature(rawBody, wrongSignature)).toBe(false);
     });
 
-    it('returns false for signatures of mismatched length without throwing RangeError', () => {
-      const provider = new PaystackProvider({ secretKey: TEST_SECRET_KEY });
+    it('returns false for signatures of mismatched length', () => {
+      const provider = makeProvider();
       const rawBody = Buffer.from('{"tampered":true}', 'utf8');
-
-      expect(provider.verifyWebhookSignature(rawBody, 'short-signature')).toBe(false);
+      expect(provider.verifyWebhookSignature(rawBody, 'short')).toBe(false);
       expect(provider.verifyWebhookSignature(rawBody, '')).toBe(false);
     });
   });

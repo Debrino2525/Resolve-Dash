@@ -2,8 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
-  HttpCode,
   HttpStatus,
   Post,
   Query,
@@ -68,8 +66,7 @@ export class SubscriptionController {
     const email = user.email || `rider_${user.id.slice(0, 8)}@ghanadash.local`;
 
     // Paystack strictly requires HTTP/HTTPS callback URLs.
-    // If the mobile app supplies a custom scheme (e.g. ghanadash-rider://) or none,
-    // route through our backend HTTPS redirect bridge.
+    // Route through our backend HTTPS redirect bridge; custom schemes are rejected.
     const host = req.get('host') || 'localhost:3000';
     const protocol =
       req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
@@ -95,16 +92,6 @@ export class SubscriptionController {
     };
   }
 
-  @Post('/../webhooks/paystack')
-  @HttpCode(HttpStatus.OK)
-  async handleWebhook(
-    @Req() req: Request & { rawBody?: Buffer },
-    @Headers('x-paystack-signature') signature: string,
-  ): Promise<{ received: boolean; duplicate?: boolean; credited?: boolean }> {
-    const rawBody = req.rawBody ?? Buffer.from('');
-    return this.subscriptionService.handleWebhook(rawBody, signature || '');
-  }
-
   /**
    * HTTPS redirect bridge for Paystack checkout return.
    * Redirects browser to mobile custom scheme ghanadash-rider://subscription-callback
@@ -118,7 +105,6 @@ export class SubscriptionController {
     const ref = reference || trxref || '';
     const deepLinkUrl = `ghanadash-rider://subscription-callback?reference=${encodeURIComponent(ref)}`;
 
-    // Deliver HTML launcher that works across mobile browsers
     const html = `<!DOCTYPE html>
 <html>
 <head>

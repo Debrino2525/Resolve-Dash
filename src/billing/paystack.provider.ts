@@ -46,14 +46,14 @@ export class PaystackProvider implements IBillingProvider {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
 
-  constructor(options?: PaystackProviderOptions) {
-    const key = options?.secretKey ?? process.env.PAYSTACK_SECRET_KEY;
+  constructor() {
+    const key = process.env.PAYSTACK_SECRET_KEY;
     if (!key || key.trim().length === 0) {
       throw new Error('PAYSTACK_SECRET_KEY is not configured');
     }
     this.secretKey = key.trim();
-    this.baseUrl = (options?.baseUrl ?? 'https://api.paystack.co').replace(/\/+$/, '');
-    this.fetchImpl = options?.fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.baseUrl = 'https://api.paystack.co';
+    this.fetchImpl = globalThis.fetch.bind(globalThis);
   }
 
   /**

@@ -4,9 +4,17 @@ import { BillingModule } from './billing/billing.module';
 import { DatabaseModule } from './database/database.module';
 import { RidersModule } from './riders/riders.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, BillingModule, RidersModule, SubscriptionsModule],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    BillingModule,
+    RidersModule,
+    SubscriptionsModule,
+    WebhooksModule,
+  ],
   controllers: [],
   providers: [],
 })
