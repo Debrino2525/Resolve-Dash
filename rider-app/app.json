@@ -29,6 +29,9 @@
       "eas": {
         "projectId": "d050d3ed-baaf-49d0-b629-14c7bc7fac95"
       }
-    }
+    },
+    "plugins": [
+      "expo-asset"
+    ]
   }
 }
