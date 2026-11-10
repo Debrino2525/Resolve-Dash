@@ -25,6 +25,8 @@ export interface SubscriptionStatusResponse {
   paidUntil: string | null;
   graceEndsAt: string | null;
   canAcceptOrders: boolean;
+  /** Why canAcceptOrders is false: RIDER_NOT_APPROVED | SUBSCRIPTION_EXPIRED | NO_SUBSCRIPTION_FOUND. */
+  ineligibleReason: string | null;
   pricePesewas: number;
   serverTime: string;
 }
@@ -46,11 +48,12 @@ export class SubscriptionController {
     const result = await this.subscriptionService.getSubscriptionStatus(user.id);
 
     return {
-      status: result.subscription?.status ?? 'SUSPENDED',
+      status: result.eligibility.effectiveStatus,
       trialEndsAt: result.subscription?.trialEndsAt?.toISOString() ?? null,
       paidUntil: result.subscription?.paidUntil?.toISOString() ?? null,
-      graceEndsAt: result.subscription?.graceEndsAt?.toISOString() ?? null,
+      graceEndsAt: result.eligibility.graceEndsAt?.toISOString() ?? null,
       canAcceptOrders: result.eligibility.canAccept,
+      ineligibleReason: result.eligibility.reason ?? null,
       pricePesewas: WEEKLY_SUBSCRIPTION_PESEWAS,
       serverTime: new Date().toISOString(),
     };
@@ -116,11 +119,13 @@ export class SubscriptionController {
   <h2>Payment Complete</h2>
   <p>Returning you to the Rider app...</p>
   <p><a href="${deepLinkUrl}" style="display: inline-block; padding: 12px 24px; background: #00875A; color: white; border-radius: 6px; text-decoration: none;">Return to Ghana Dash</a></p>
-  <script>window.location.href = "${deepLinkUrl}";</script>
 </body>
 </html>`;
 
-    res.setHeader('Content-Type', 'text/html');
+    // No inline script: Helmet's CSP (script-src 'self') blocks it. The meta refresh and the
+    // link both work without JavaScript.
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
     res.status(HttpStatus.OK).send(html);
   }
 }

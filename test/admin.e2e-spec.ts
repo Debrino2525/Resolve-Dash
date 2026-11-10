@@ -46,13 +46,10 @@ describe('Admin portal E2E (auth lockdown)', () => {
     process.env.SUPABASE_ANON_KEY = 'anon-test-key';
 
     mockAdminService = {
-      getStats: jest.fn().mockResolvedValue({
-        totalRiders: 1,
-        pendingVerification: 1,
-        activeRiders: 0,
-        activeSubscriptions: 0,
+      getOverview: jest.fn().mockResolvedValue({
+        stats: { totalRiders: 1, pendingVerification: 1, activeRiders: 0, activeSubscriptions: 0 },
+        riders: [],
       }),
-      listRiders: jest.fn().mockResolvedValue([]),
       approveRider: jest.fn().mockResolvedValue({ id: RIDER_ID }),
       rejectRider: jest.fn().mockResolvedValue({ id: RIDER_ID }),
       grantSubscriptionAccess: jest.fn().mockResolvedValue({ id: RIDER_ID }),
@@ -87,7 +84,7 @@ describe('Admin portal E2E (auth lockdown)', () => {
 
   it('rejects unauthenticated access to rider data with 401', async () => {
     await request(app.getHttpServer()).get('/admin/api/riders').expect(401);
-    expect(mockAdminService.listRiders).not.toHaveBeenCalled();
+    expect(mockAdminService.getOverview).not.toHaveBeenCalled();
   });
 
   it.each(mutatingRoutes)('rejects unauthenticated POST %s with 401', async (action) => {
@@ -117,7 +114,10 @@ describe('Admin portal E2E (auth lockdown)', () => {
       .post(`/admin/api/riders/${RIDER_ID}/approve`)
       .set('Authorization', `Bearer ${adminToken()}`)
       .expect(201);
-    expect(mockAdminService.approveRider).toHaveBeenCalledWith(RIDER_ID);
+    expect(mockAdminService.approveRider).toHaveBeenCalledWith(
+      RIDER_ID,
+      '55555555-5555-5555-5555-555555555555',
+    );
   });
 
   it('rejects non-UUID rider ids with 400', async () => {

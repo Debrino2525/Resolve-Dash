@@ -25,6 +25,7 @@ describe('SubscriptionService', () => {
 
     mockRepository = {
       findSubscriptionByRiderId: jest.fn(),
+      findRiderOnboardingStatus: jest.fn().mockResolvedValue('ACTIVE'),
       findPendingPaymentByRiderId: jest.fn(),
       findPaymentByReference: jest.fn(),
       createPendingPayment: jest.fn(),
@@ -403,6 +404,48 @@ describe('SubscriptionService', () => {
       mockRepository.findSubscriptionByRiderId.mockResolvedValue(expiredSub);
 
       const result = await service.getSubscriptionStatus(RIDER_ID);
+      expect(result.eligibility.canAccept).toBe(false);
+      expect(result.eligibility.reason).toBe('SUBSCRIPTION_EXPIRED');
+    });
+    it('refuses dispatch for a rider who is not admin-approved, even with paid access', async () => {
+      mockRepository.findSubscriptionByRiderId.mockResolvedValue({
+        id: 'sub-2',
+        riderId: RIDER_ID,
+        status: 'ACTIVE',
+        trialEndsAt: null,
+        paidUntil: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        graceEndsAt: null,
+        trialUsed: true,
+        remindersSent: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      for (const status of ['REJECTED', 'PENDING_VERIFICATION', null] as const) {
+        mockRepository.findRiderOnboardingStatus.mockResolvedValue(status);
+        const result = await service.getSubscriptionStatus(RIDER_ID);
+        expect(result.eligibility.canAccept).toBe(false);
+        expect(result.eligibility.reason).toBe('RIDER_NOT_APPROVED');
+        expect(result.eligibility.effectiveStatus).toBe('ACTIVE');
+      }
+    });
+
+    it('reports the derived status, not the stale stored one', async () => {
+      mockRepository.findSubscriptionByRiderId.mockResolvedValue({
+        id: 'sub-3',
+        riderId: RIDER_ID,
+        status: 'ACTIVE', // stored value never advanced
+        trialEndsAt: null,
+        paidUntil: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+        graceEndsAt: null,
+        trialUsed: true,
+        remindersSent: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await service.getSubscriptionStatus(RIDER_ID);
+      expect(result.eligibility.effectiveStatus).toBe('SUSPENDED');
       expect(result.eligibility.canAccept).toBe(false);
       expect(result.eligibility.reason).toBe('SUBSCRIPTION_EXPIRED');
     });

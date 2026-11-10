@@ -44,6 +44,15 @@ Your server `.env` (gitignored) should contain:
 DATABASE_URL=postgresql://ghana_delivery_app.<project_ref>:<YOUR_PASSWORD>@<POOLER_HOST_FROM_DASHBOARD>:6543/postgres
 ```
 
+### Verified TLS to the database
+The backend checks the database server's certificate so nobody on the network path can impersonate it.
+1. Supabase Dashboard → **Project Settings → Database → SSL Configuration → Download certificate**.
+2. Save it on the server (e.g. `certs/supabase-ca.crt`, which is gitignored) and set `DATABASE_SSL_CA=./certs/supabase-ca.crt`. On hosts without a filesystem, put the PEM text in the env var; `\n` escapes are accepted.
+3. With `NODE_ENV=production` the server **refuses to start** without `DATABASE_SSL_CA`. To knowingly run unverified, set `DATABASE_SSL_REJECT_UNAUTHORIZED=false` (logged as a warning). In development a missing CA only logs a warning.
+
+### Rate limiting
+Every route is limited per client IP (`THROTTLE_LIMIT`, default 120 per `THROTTLE_TTL_MS` = 60s). Admin login is limited to `AUTH_THROTTLE_LIMIT` (default 5) attempts per minute, and Paystack webhooks are exempt. **Behind a reverse proxy or load balancer, set `TRUST_PROXY=1`**. Without it every request appears to come from the proxy, and all users share one budget.
+
 ---
 
 ## 3. Running the SQL Security & Constraint Tests
@@ -117,6 +126,12 @@ TEST_DATABASE_URL=postgresql://postgres:<PASSWORD>@<TEST_PROJECT_DB_HOST>:5432/p
 * **Creation**: Admin accounts are never registered via public signup. They are provisioned directly in the Supabase Dashboard by the organization owner.
 * **Role check (implemented)**: Every `/admin/api/*` data endpoint is protected by `AdminGuard` (`src/auth/admin.guard.ts`). It verifies the Supabase JWT and requires `app_metadata.role === 'admin'`. No token → 401, non-admin → 403. `user_metadata` is ignored because users can edit it themselves.
 * **MFA (not yet implemented)**: The guard does not check the `aal` claim yet. Requiring `aal === 'aal2'` is planned once the admin page supports a TOTP step.
+
+### Approval, eligibility, and audit
+* **Dispatch eligibility** (`GET /subscriptions/me` → `canAcceptOrders`) requires both an admin-approved rider (`onboarding_status = 'ACTIVE'`) **and** subscription coverage. Rejected or pending riders get `ineligibleReason: 'RIDER_NOT_APPROVED'` even if they hold paid or granted access. The app shows rejected riders a blocked screen.
+* **Subscription status is computed from timestamps when read** (`src/subscriptions/subscription-state.ts`): ACTIVE while `paid_until` is in the future, then TRIAL while `trial_ends_at` is, then `GRACE_PERIOD` for `GRACE_PERIOD_HOURS` after a *paid* week ends (an expired trial gets no grace), then SUSPENDED. Nothing updates the stored `status` column as time passes, so the API and admin roster never use it directly.
+* **Audit**: approve and reject write `rider_approval_events` with the acting admin's user id. Trial starts and "+7 days free" grants write `subscription_events` with `actor_id = 'admin:<user id>'`.
+* **Phone numbers are not OTP-verified** (sign-in is email + password). Confirm the number with the rider before approving. A number already used by another account is rejected with 409.
 
 ### Provisioning an admin account
 1. Create the user in Supabase Dashboard → Authentication → Users → **Add user** (email + password, auto-confirm).

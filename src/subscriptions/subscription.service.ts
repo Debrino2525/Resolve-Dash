@@ -13,6 +13,7 @@ import { GHS_CURRENCY, toPesewas } from '../domain/types/money';
 import { CheckoutSession, SubscriptionPayment } from '../domain/types/payment';
 import { DispatchEligibilityResult, Subscription } from '../domain/types/subscription';
 import { deriveWebhookDedupeKey, PaystackWebhookEnvelope } from '../domain/types/webhook';
+import { computeSubscriptionState } from './subscription-state';
 import { SubscriptionRepository } from './subscription.repository';
 
 export const WEEKLY_SUBSCRIPTION_PESEWAS = toPesewas(5000); // GH₵50.00
@@ -210,7 +211,10 @@ export class SubscriptionService {
   async getSubscriptionStatus(
     riderId: string,
   ): Promise<{ subscription: Subscription | null; eligibility: DispatchEligibilityResult }> {
-    const subscription = await this.repository.findSubscriptionByRiderId(riderId);
+    const [subscription, onboardingStatus] = await Promise.all([
+      this.repository.findSubscriptionByRiderId(riderId),
+      this.repository.findRiderOnboardingStatus(riderId),
+    ]);
     if (!subscription) {
       return {
         subscription: null,
@@ -219,24 +223,23 @@ export class SubscriptionService {
           reason: 'NO_SUBSCRIPTION_FOUND',
           isMidTrip: false,
           effectiveStatus: 'SUSPENDED',
+          graceEndsAt: null,
         },
       };
     }
 
-    const now = new Date();
-    const trialEnd = subscription.trialEndsAt ? subscription.trialEndsAt.getTime() : 0;
-    const paidUntil = subscription.paidUntil ? subscription.paidUntil.getTime() : 0;
-    const graceEnd = subscription.graceEndsAt ? subscription.graceEndsAt.getTime() : 0;
-    const nowTime = now.getTime();
+    // Derived from timestamps: the stored status column is never advanced as time passes.
+    const state = computeSubscriptionState(subscription, new Date());
 
-    const maxCovered = Math.max(trialEnd, paidUntil);
-    const inGrace = subscription.status === 'GRACE_PERIOD' && nowTime < graceEnd;
-    const canAccept = nowTime < maxCovered || inGrace;
-
-    let reason: string | undefined;
-    if (!canAccept) {
-      reason = 'SUBSCRIPTION_EXPIRED';
-    }
+    // Only admin-approved riders may take orders, whatever their subscription says
+    // (e.g. a rejected rider who was previously granted free access).
+    const approved = onboardingStatus === 'ACTIVE';
+    const canAccept = state.canAccept && approved;
+    const reason = !approved
+      ? 'RIDER_NOT_APPROVED'
+      : !state.canAccept
+        ? 'SUBSCRIPTION_EXPIRED'
+        : undefined;
 
     return {
       subscription,
@@ -244,7 +247,8 @@ export class SubscriptionService {
         canAccept,
         reason,
         isMidTrip: false,
-        effectiveStatus: subscription.status,
+        effectiveStatus: state.effectiveStatus,
+        graceEndsAt: state.graceEndsAt,
       },
     };
   }

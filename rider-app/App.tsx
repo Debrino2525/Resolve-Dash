@@ -15,6 +15,7 @@ import {
   signInOrRegisterWithPassword,
   supabase,
 } from './src/auth/supabase';
+import { AccountRejectedScreen } from './src/screens/AccountRejectedScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { PendingVerificationScreen } from './src/screens/PendingVerificationScreen';
@@ -152,6 +153,13 @@ export default function App(): React.JSX.Element {
           onAuthenticate={handleAuthenticate}
           loading={loading}
           errorMessage={errorMessage}
+        />
+      ) : profile.onboardingStatus === 'REJECTED' ? (
+        <AccountRejectedScreen
+          riderName={profile.fullName}
+          onRefreshStatus={loadAuthoritativeBackendState}
+          onSignOut={handleSignOut}
+          loading={loading}
         />
       ) : profile.onboardingStatus === 'PENDING_VERIFICATION' ? (
         <PendingVerificationScreen

@@ -4,12 +4,20 @@ dotenv.config();
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import * as express from 'express';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
   // rawBody: true preserves raw payload Buffer on RawBodyRequest<Request>
   // essential for HMAC SHA-512 webhook signature verification.
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+
+  // Behind a reverse proxy / load balancer, trust X-Forwarded-For so req.ip (used by the rate
+  // limiter) is the real client. Value: a hop count (e.g. "1") or an Express trust-proxy string.
+  const trustProxy = process.env.TRUST_PROXY?.trim();
+  if (trustProxy) {
+    app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+  }
 
   // Security headers via Helmet
   app.use(helmet());

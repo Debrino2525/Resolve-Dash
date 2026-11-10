@@ -3,6 +3,7 @@ import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { CurrencyGHS, Pesewas, toPesewas } from '../domain/types/money';
 import { PaymentStatus, SubscriptionPayment } from '../domain/types/payment';
+import { RiderOnboardingStatus } from '../domain/types/rider';
 import { Subscription, SubscriptionStatus } from '../domain/types/subscription';
 
 export interface CreatePaymentRecordParams {
@@ -114,6 +115,15 @@ export class SubscriptionRepository {
     );
     if (res.rows.length === 0) return null;
     return mapSubscriptionRow(res.rows[0]);
+  }
+
+  /** The rider's admin approval status, or null if the rider has no profile. */
+  async findRiderOnboardingStatus(riderId: string): Promise<RiderOnboardingStatus | null> {
+    const res = await this.db.query<{ onboarding_status: RiderOnboardingStatus }>(
+      `SELECT onboarding_status FROM riders WHERE id = $1`,
+      [riderId],
+    );
+    return res.rows[0]?.onboarding_status ?? null;
   }
 
   async findPendingPaymentByRiderId(riderId: string): Promise<SubscriptionPayment | null> {
