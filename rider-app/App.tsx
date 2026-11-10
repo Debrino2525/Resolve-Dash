@@ -15,9 +15,11 @@ import {
   signInOrRegisterWithPassword,
   supabase,
 } from './src/auth/supabase';
+import { AccountRejectedScreen } from './src/screens/AccountRejectedScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { PendingVerificationScreen } from './src/screens/PendingVerificationScreen';
+import { TactileButton } from './src/components/TactileButton';
 import { executePaystackSubscriptionPayment } from './src/services/paystackCheckout';
 import { Colors } from './src/theme/theme';
 import { RiderProfile, SubscriptionDetails } from './src/types/subscription';
@@ -66,8 +68,8 @@ export default function App(): React.JSX.Element {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to synchronize with server';
-      // If profile not found, rider needs to complete onboarding
-      if (!msg.includes('onboarding')) {
+      // If profile not found, clear profile so AuthScreen displays
+      if (!msg.includes('onboarding') && !msg.includes('not found')) {
         setErrorMessage(msg);
       }
     } finally {
@@ -139,12 +141,25 @@ export default function App(): React.JSX.Element {
       {loading && !profile ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={Colors.dispatchGreen} />
+          <TactileButton
+            title="Reset / Go to Login"
+            variant="secondary"
+            onPress={handleSignOut}
+            style={{ marginTop: 24, width: 220 }}
+          />
         </View>
       ) : !authenticated || !profile ? (
         <AuthScreen
           onAuthenticate={handleAuthenticate}
           loading={loading}
           errorMessage={errorMessage}
+        />
+      ) : profile.onboardingStatus === 'REJECTED' ? (
+        <AccountRejectedScreen
+          riderName={profile.fullName}
+          onRefreshStatus={loadAuthoritativeBackendState}
+          onSignOut={handleSignOut}
+          loading={loading}
         />
       ) : profile.onboardingStatus === 'PENDING_VERIFICATION' ? (
         <PendingVerificationScreen

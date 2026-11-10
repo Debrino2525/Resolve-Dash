@@ -23,7 +23,10 @@ export function PendingVerificationScreen({
   loading,
 }: PendingVerificationScreenProps): React.JSX.Element {
   const handleCallSupport = (): void => {
-    Alert.alert('Takoradi Dispatch Hub', 'Calling Operations Manager: +233 31 200 0000');
+    Alert.alert(
+      'GhanaDash support',
+      'A rider support line is not connected yet. Refresh this screen after an admin approves your account.',
+    );
   };
 
   return (
@@ -31,7 +34,7 @@ export function PendingVerificationScreen({
       {/* Telemetry Status Pill */}
       <StatusTelemetryPill
         statusText="PENDING HUB VERIFICATION"
-        badgeText="WESTERN REGION"
+        badgeText="GHANA"
         variant="amber"
       />
 
@@ -43,14 +46,14 @@ export function PendingVerificationScreen({
         </View>
 
         <View style={styles.hubLocationBadge}>
-          <Text style={styles.hubLocationText}>📍 Takoradi Central Operations Hub</Text>
+          <Text style={styles.hubLocationText}>📍 GhanaDash operations</Text>
         </View>
 
         <Text style={styles.heroHeading}>Verification in Progress</Text>
         <Text style={styles.heroDescription}>
-          Welcome, <Text style={styles.boldText}>{riderName}</Text>. The Takoradi dispatch team
-          is verifying your biometric Ghana Card and motorbike roadworthiness before activating your
-          dispatch credentials.
+          Welcome, <Text style={styles.boldText}>{riderName}</Text>. An admin still needs to
+          approve your account before you can go on duty anywhere in Ghana. Ghana Card and
+          motorbike checks are not collected in the app yet.
         </Text>
       </View>
 
@@ -58,34 +61,34 @@ export function PendingVerificationScreen({
       <View style={styles.checklistCard}>
         <View style={styles.checklistHeader}>
           <Text style={styles.checkTitle}>COMPLIANCE VERIFICATION</Text>
-          <Text style={styles.checkProgress}>2/3 CHECKED</Text>
+          <Text style={styles.checkProgress}>0/3 SUBMITTED</Text>
         </View>
 
         {/* Step 1 */}
         <View style={styles.checkItem}>
-          <View style={[styles.statusIconCircle, styles.iconDone]}>
-            <Text style={styles.checkMark}>✓</Text>
+          <View style={[styles.statusIconCircle, styles.iconPending]}>
+            <Text style={styles.checkClock}>⏳</Text>
           </View>
           <View style={styles.checkTextCol}>
             <View style={styles.checkNameRow}>
               <Text style={styles.checkName}>Ghana Card ID</Text>
-              <Text style={styles.badgeDone}>VERIFIED</Text>
+              <Text style={styles.badgePending}>NOT SUBMITTED</Text>
             </View>
-            <Text style={styles.checkSub}>National biometric check validated against registry</Text>
+            <Text style={styles.checkSub}>Document upload is not connected yet</Text>
           </View>
         </View>
 
         {/* Step 2 */}
         <View style={styles.checkItem}>
-          <View style={[styles.statusIconCircle, styles.iconDone]}>
-            <Text style={styles.checkMark}>✓</Text>
+          <View style={[styles.statusIconCircle, styles.iconPending]}>
+            <Text style={styles.checkClock}>⏳</Text>
           </View>
           <View style={styles.checkTextCol}>
             <View style={styles.checkNameRow}>
               <Text style={styles.checkName}>Motorbike Roadworthiness</Text>
-              <Text style={styles.badgeDone}>VERIFIED</Text>
+              <Text style={styles.badgePending}>NOT SUBMITTED</Text>
             </View>
-            <Text style={styles.checkSub}>DVLA commercial inspection cleared</Text>
+            <Text style={styles.checkSub}>DVLA inspection upload is not connected yet</Text>
           </View>
         </View>
 
@@ -99,7 +102,7 @@ export function PendingVerificationScreen({
               <Text style={styles.checkName}>Regional Command Clearance</Text>
               <Text style={styles.badgePending}>IN REVIEW</Text>
             </View>
-            <Text style={styles.checkSub}>Awaiting final sign-off from Takoradi Dispatch</Text>
+            <Text style={styles.checkSub}>Waiting for an admin to approve this account</Text>
           </View>
         </View>
       </View>
@@ -118,7 +121,7 @@ export function PendingVerificationScreen({
           onPress={handleCallSupport}
           style={styles.supportButton}
         >
-          <Text style={styles.supportText}>📞 Call Takoradi Dispatch Hotline</Text>
+          <Text style={styles.supportText}>Support line not connected yet</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

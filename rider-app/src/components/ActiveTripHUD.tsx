@@ -21,7 +21,7 @@ export function ActiveTripHUD({
   customerName,
   customerPhone,
   destination,
-  roadCue = 'John Sarbah Rd, Takoradi',
+  roadCue = 'Follow the route',
   distanceCue = '250m',
   onAdvanceStage,
   onCompleteTrip,

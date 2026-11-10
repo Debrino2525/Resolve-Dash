@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { buildDatabaseSslConfig, readPoolMax } from './database-ssl';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -12,10 +13,15 @@ export class DatabaseService implements OnModuleDestroy {
       this.logger.warn('DATABASE_URL is not set. Database operations will fail unless configured.');
     }
 
+    const { ssl, warning } = buildDatabaseSslConfig();
+    if (warning) {
+      this.logger.warn(warning);
+    }
+
     this.pool = new Pool({
       connectionString,
-      max: 10,
-      ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+      max: readPoolMax(),
+      ssl,
     });
 
     this.pool.on('error', (err) => {

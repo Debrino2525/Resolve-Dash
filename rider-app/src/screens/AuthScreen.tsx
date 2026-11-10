@@ -64,11 +64,11 @@ export function AuthScreen({
         {/* Header Branding */}
         <View style={styles.brandContainer}>
           <Text style={styles.brandLogo}>GhanaDash 🏍️</Text>
-          <Text style={styles.hubSubtitle}>Takoradi Coastal & Harbor Logistics Hub</Text>
+          <Text style={styles.hubSubtitle}>Motorbike delivery across Ghana</Text>
         </View>
 
         <StatusTelemetryPill
-          statusText="TAKORADI DISPATCH NETWORK"
+          statusText="GHANA DISPATCH NETWORK"
           badgeText="ONLINE"
           variant="green"
         />

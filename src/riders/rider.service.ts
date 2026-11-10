@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Rider } from '../domain/types/rider';
 import { RiderRepository } from './rider.repository';
 
@@ -34,7 +39,22 @@ export class RiderService {
       );
     }
 
-    return this.riderRepository.createRiderProfile(userId, effectivePhone, email, trimmedName);
+    try {
+      return await this.riderRepository.createRiderProfile(
+        userId,
+        effectivePhone,
+        email,
+        trimmedName,
+      );
+    } catch (err) {
+      // riders.phone_number is UNIQUE: another account already registered this number.
+      if (isUniqueViolationOn(err, 'phone')) {
+        throw new ConflictException(
+          'This phone number is already registered to another rider account. Contact GhanaDash operations if it is yours.',
+        );
+      }
+      throw err;
+    }
   }
 
   async getProfile(userId: string): Promise<Rider> {
@@ -44,4 +64,11 @@ export class RiderService {
     }
     return rider;
   }
+}
+
+/** True for a Postgres unique_violation (23505) whose constraint name mentions `column`. */
+function isUniqueViolationOn(err: unknown, column: string): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const pgErr = err as { code?: string; constraint?: string };
+  return pgErr.code === '23505' && (pgErr.constraint ?? '').includes(column);
 }

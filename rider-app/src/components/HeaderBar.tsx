@@ -15,7 +15,7 @@ export function HeaderBar({
   isOnline,
   onToggleOnline,
   canGoOnline,
-  hubName = 'Takoradi Hub',
+  hubName = 'Ghana Network',
 }: HeaderBarProps): React.JSX.Element {
   const initials = riderName
     .split(' ')

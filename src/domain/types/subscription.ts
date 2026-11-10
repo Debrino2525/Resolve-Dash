@@ -32,4 +32,6 @@ export interface DispatchEligibilityResult {
   reason?: string;
   isMidTrip: boolean;
   effectiveStatus: SubscriptionStatus;
+  /** End of the current grace window when effectiveStatus is GRACE_PERIOD. */
+  graceEndsAt?: Date | null;
 }

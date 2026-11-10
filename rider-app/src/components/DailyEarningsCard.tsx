@@ -18,17 +18,17 @@ export interface DailyEarningsCardProps {
 }
 
 export function DailyEarningsCard({
-  totalEarningsGHS = 'GH₵140.00',
-  tripsCount = 8,
-  onlineHours = '5.4h',
-  acceptanceRate = '98%',
+  totalEarningsGHS = 'GH₵0.00',
+  tripsCount = 0,
+  onlineHours = '0h',
+  acceptanceRate = '—',
   recentTrips = [],
 }: DailyEarningsCardProps): React.JSX.Element {
   return (
     <View style={styles.container}>
       {/* Hero Earnings Banner */}
       <View style={styles.heroEarningsCard}>
-        <Text style={styles.earningsLabel}>TODAY'S SHIFT EARNINGS</Text>
+        <Text style={styles.earningsLabel}>PRACTICE EARNINGS (NOT A PAYOUT)</Text>
         <Text style={styles.earningsHero}>{totalEarningsGHS}</Text>
 
         <View style={styles.statsRow}>

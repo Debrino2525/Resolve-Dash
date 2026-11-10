@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import { computeSubscriptionState } from '../subscriptions/subscription-state';
 import { AdminRiderOverview, AdminStats } from './admin.types';
 
 interface RawAdminRiderRow {
@@ -7,17 +9,28 @@ interface RawAdminRiderRow {
   phone_number: string;
   full_name: string;
   onboarding_status: 'PENDING_VERIFICATION' | 'ACTIVE' | 'REJECTED';
-  subscription_status: string | null;
+  has_subscription: boolean;
+  trial_ends_at: string | Date | null;
   paid_until: string | Date | null;
   grace_ends_at: string | Date | null;
   created_at: string | Date;
 }
 
+const toDate = (v: string | Date | null): Date | null => (v ? new Date(v) : null);
+
+/** Audit actor id stored in subscription_events.actor_id. */
+const adminActor = (adminId: string): string => `admin:${adminId}`;
+
 @Injectable()
 export class AdminService {
   constructor(private readonly db: DatabaseService) {}
 
-  async listRiders(): Promise<AdminRiderOverview[]> {
+  async getOverview(): Promise<{ stats: AdminStats; riders: AdminRiderOverview[] }> {
+    const riders = await this.listRiders();
+    return { stats: summarize(riders), riders };
+  }
+
+  async listRiders(riderId?: string): Promise<AdminRiderOverview[]> {
     const res = await this.db.query<RawAdminRiderRow>(
       `SELECT
          r.id,
@@ -25,116 +38,228 @@ export class AdminService {
          r.full_name,
          r.onboarding_status,
          r.created_at,
-         COALESCE(s.status, 'NONE') AS subscription_status,
+         (s.id IS NOT NULL) AS has_subscription,
+         s.trial_ends_at,
          s.paid_until,
          s.grace_ends_at
        FROM riders r
        LEFT JOIN subscriptions s ON r.id = s.rider_id
+       ${riderId ? 'WHERE r.id = $1' : ''}
        ORDER BY r.created_at DESC`,
-      [],
+      riderId ? [riderId] : [],
     );
 
-    return res.rows.map((row) => ({
-      id: row.id,
-      phoneNumber: row.phone_number,
-      fullName: row.full_name,
-      onboardingStatus: row.onboarding_status,
-      subscriptionStatus: row.subscription_status ?? 'NONE',
-      paidUntil: row.paid_until ? new Date(row.paid_until).toISOString() : null,
-      graceEndsAt: row.grace_ends_at ? new Date(row.grace_ends_at).toISOString() : null,
-      createdAt: new Date(row.created_at).toISOString(),
-    }));
+    const now = new Date();
+    return res.rows.map((row) => {
+      // Status is derived from timestamps; the stored column goes stale as time passes.
+      const state = row.has_subscription
+        ? computeSubscriptionState(
+            {
+              trialEndsAt: toDate(row.trial_ends_at),
+              paidUntil: toDate(row.paid_until),
+              graceEndsAt: toDate(row.grace_ends_at),
+            },
+            now,
+          )
+        : null;
+      const paidUntil = toDate(row.paid_until);
+      return {
+        id: row.id,
+        phoneNumber: row.phone_number,
+        fullName: row.full_name,
+        onboardingStatus: row.onboarding_status,
+        subscriptionStatus: state?.effectiveStatus ?? 'NONE',
+        paidUntil: paidUntil ? paidUntil.toISOString() : null,
+        graceEndsAt: state?.graceEndsAt ? state.graceEndsAt.toISOString() : null,
+        createdAt: new Date(row.created_at).toISOString(),
+      };
+    });
   }
 
   async getStats(): Promise<AdminStats> {
-    const riders = await this.listRiders();
-    const totalRiders = riders.length;
-    const pendingVerification = riders.filter(
-      (r) => r.onboardingStatus === 'PENDING_VERIFICATION',
-    ).length;
-    const activeRiders = riders.filter((r) => r.onboardingStatus === 'ACTIVE').length;
-    const activeSubscriptions = riders.filter(
-      (r) => r.subscriptionStatus === 'ACTIVE' || r.subscriptionStatus === 'TRIAL',
-    ).length;
-
-    return {
-      totalRiders,
-      pendingVerification,
-      activeRiders,
-      activeSubscriptions,
-    };
+    return summarize(await this.listRiders());
   }
 
-  async approveRider(riderId: string): Promise<AdminRiderOverview> {
-    const res = await this.db.query<RawAdminRiderRow>(
-      `UPDATE riders
-       SET onboarding_status = 'ACTIVE', updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, phone_number, full_name, onboarding_status, created_at, NULL as subscription_status, NULL as paid_until, NULL as grace_ends_at`,
-      [riderId],
-    );
+  async approveRider(riderId: string, adminId: string): Promise<AdminRiderOverview> {
+    const trialDays = readPositiveInt(process.env.TRIAL_PERIOD_DAYS, 14);
+    const actor = adminActor(adminId);
 
-    if (res.rows.length === 0) {
-      throw new NotFoundException(`Rider with id ${riderId} not found`);
-    }
+    await this.db.withTransaction(async (client) => {
+      const status = await lockRiderStatus(client, riderId);
+      if (status === 'REJECTED') {
+        throw new ConflictException('A rejected rider cannot be approved from this action');
+      }
 
-    // Ensure rider has a subscription row
-    await this.db.query(
-      `INSERT INTO subscriptions (rider_id, status)
-       VALUES ($1, 'SUSPENDED')
-       ON CONFLICT (rider_id) DO NOTHING`,
-      [riderId],
-    );
+      if (status === 'PENDING_VERIFICATION') {
+        await client.query(
+          `UPDATE riders SET onboarding_status = 'ACTIVE', updated_at = NOW() WHERE id = $1`,
+          [riderId],
+        );
+        await client.query(
+          `INSERT INTO rider_approval_events (rider_id, action, admin_id, reason)
+           VALUES ($1, 'APPROVED', $2, $3)`,
+          [riderId, adminId, 'Approved via admin dashboard'],
+        );
+      }
 
-    const riders = await this.listRiders();
-    const updated = riders.find((r) => r.id === riderId);
-    if (!updated) {
-      throw new NotFoundException(`Rider with id ${riderId} not found`);
-    }
-    return updated;
+      const subscription = await client.query<{
+        id: string;
+        status: string;
+        trial_used: boolean;
+      }>(`SELECT id, status, trial_used FROM subscriptions WHERE rider_id = $1 FOR UPDATE`, [
+        riderId,
+      ]);
+
+      if (subscription.rows.length === 0) {
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO subscriptions (rider_id, status, trial_ends_at, trial_used)
+           VALUES ($1, 'TRIAL', NOW() + ($2 || ' days')::INTERVAL, TRUE)
+           RETURNING id`,
+          [riderId, String(trialDays)],
+        );
+        await client.query(
+          `INSERT INTO subscription_events (
+             subscription_id, rider_id, event_type, from_status, to_status, reason, actor_id
+           ) VALUES ($1, $2, 'TRIAL_STARTED', NULL, 'TRIAL', $3, $4)`,
+          [
+            inserted.rows[0].id,
+            riderId,
+            `Trial started for ${trialDays} days when the rider was approved`,
+            actor,
+          ],
+        );
+        return;
+      }
+
+      const current = subscription.rows[0];
+      if (current.trial_used) {
+        return;
+      }
+
+      await client.query(
+        `UPDATE subscriptions
+         SET status = 'TRIAL',
+             trial_ends_at = NOW() + ($2 || ' days')::INTERVAL,
+             trial_used = TRUE,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [current.id, String(trialDays)],
+      );
+      await client.query(
+        `INSERT INTO subscription_events (
+           subscription_id, rider_id, event_type, from_status, to_status, reason, actor_id
+         ) VALUES ($1, $2, 'TRIAL_STARTED', $3, 'TRIAL', $4, $5)`,
+        [
+          current.id,
+          riderId,
+          current.status,
+          `Trial started for ${trialDays} days when the rider was approved`,
+          actor,
+        ],
+      );
+    });
+
+    return this.requireOverview(riderId);
   }
 
-  async rejectRider(riderId: string): Promise<AdminRiderOverview> {
-    const res = await this.db.query<RawAdminRiderRow>(
-      `UPDATE riders
-       SET onboarding_status = 'REJECTED', updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, phone_number, full_name, onboarding_status, created_at, NULL as subscription_status, NULL as paid_until, NULL as grace_ends_at`,
-      [riderId],
-    );
+  async rejectRider(riderId: string, adminId: string): Promise<AdminRiderOverview> {
+    await this.db.withTransaction(async (client) => {
+      const status = await lockRiderStatus(client, riderId);
+      if (status === 'REJECTED') {
+        return; // idempotent: no duplicate audit row
+      }
+      await client.query(
+        `UPDATE riders SET onboarding_status = 'REJECTED', updated_at = NOW() WHERE id = $1`,
+        [riderId],
+      );
+      await client.query(
+        `INSERT INTO rider_approval_events (rider_id, action, admin_id, reason)
+         VALUES ($1, 'REJECTED', $2, $3)`,
+        [riderId, adminId, `Rejected via admin dashboard (was ${status})`],
+      );
+    });
 
-    if (res.rows.length === 0) {
-      throw new NotFoundException(`Rider with id ${riderId} not found`);
-    }
-
-    const riders = await this.listRiders();
-    const updated = riders.find((r) => r.id === riderId);
-    if (!updated) {
-      throw new NotFoundException(`Rider with id ${riderId} not found`);
-    }
-    return updated;
+    return this.requireOverview(riderId);
   }
 
   async grantSubscriptionAccess(
     riderId: string,
-    days: number = 7,
+    days: number,
+    adminId: string,
   ): Promise<AdminRiderOverview> {
-    await this.db.query(
-      `INSERT INTO subscriptions (rider_id, status, paid_until, grace_ends_at, updated_at)
-       VALUES ($1, 'ACTIVE', NOW() + ($2 || ' days')::INTERVAL, NULL, NOW())
-       ON CONFLICT (rider_id) DO UPDATE
-       SET status = 'ACTIVE',
-           paid_until = GREATEST(COALESCE(subscriptions.paid_until, NOW()), NOW()) + ($2 || ' days')::INTERVAL,
-           grace_ends_at = NULL,
-           updated_at = NOW()`,
-      [riderId, days.toString()],
-    );
+    await this.db.withTransaction(async (client) => {
+      await lockRiderStatus(client, riderId);
 
-    const riders = await this.listRiders();
-    const updated = riders.find((r) => r.id === riderId);
-    if (!updated) {
+      const before = await client.query<{ status: string }>(
+        `SELECT status FROM subscriptions WHERE rider_id = $1 FOR UPDATE`,
+        [riderId],
+      );
+
+      const upserted = await client.query<{ id: string; paid_until: Date }>(
+        `INSERT INTO subscriptions (rider_id, status, paid_until, grace_ends_at, updated_at)
+         VALUES ($1, 'ACTIVE', NOW() + ($2 || ' days')::INTERVAL, NULL, NOW())
+         ON CONFLICT (rider_id) DO UPDATE
+         SET status = 'ACTIVE',
+             paid_until = GREATEST(COALESCE(subscriptions.paid_until, NOW()), NOW()) + ($2 || ' days')::INTERVAL,
+             grace_ends_at = NULL,
+             updated_at = NOW()
+         RETURNING id, paid_until`,
+        [riderId, days.toString()],
+      );
+
+      // Free access is a financial decision: always leave an audit trail of who granted it.
+      await client.query(
+        `INSERT INTO subscription_events (
+           subscription_id, rider_id, event_type, from_status, to_status, reason, actor_id, metadata
+         ) VALUES ($1, $2, 'ADMIN_ACCESS_GRANTED', $3, 'ACTIVE', $4, $5, $6)`,
+        [
+          upserted.rows[0].id,
+          riderId,
+          before.rows[0]?.status ?? null,
+          `Admin granted ${days} days of free dispatch access`,
+          adminActor(adminId),
+          JSON.stringify({ days, paidUntil: new Date(upserted.rows[0].paid_until).toISOString() }),
+        ],
+      );
+    });
+
+    return this.requireOverview(riderId);
+  }
+
+  private async requireOverview(riderId: string): Promise<AdminRiderOverview> {
+    const [rider] = await this.listRiders(riderId);
+    if (!rider) {
       throw new NotFoundException(`Rider with id ${riderId} not found`);
     }
-    return updated;
+    return rider;
   }
+}
+
+/** Locks the rider row for the rest of the transaction and returns its onboarding status. */
+async function lockRiderStatus(client: PoolClient, riderId: string): Promise<string> {
+  const res = await client.query<{ onboarding_status: string }>(
+    `SELECT onboarding_status FROM riders WHERE id = $1 FOR UPDATE`,
+    [riderId],
+  );
+  if (res.rows.length === 0) {
+    throw new NotFoundException(`Rider with id ${riderId} not found`);
+  }
+  return res.rows[0].onboarding_status;
+}
+
+function summarize(riders: AdminRiderOverview[]): AdminStats {
+  return {
+    totalRiders: riders.length,
+    pendingVerification: riders.filter((r) => r.onboardingStatus === 'PENDING_VERIFICATION').length,
+    activeRiders: riders.filter((r) => r.onboardingStatus === 'ACTIVE').length,
+    activeSubscriptions: riders.filter(
+      (r) => r.subscriptionStatus === 'ACTIVE' || r.subscriptionStatus === 'TRIAL',
+    ).length,
+  };
+}
+
+function readPositiveInt(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }

@@ -19,29 +19,45 @@ const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000'
 async function authenticatedFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getValidAccessToken();
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(options.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-  const body = (await response.json()) as {
-    success?: boolean;
-    data?: T;
-    error?: { code?: string; message?: string };
-    message?: string;
-  };
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(options.headers ?? {}),
+      },
+    });
 
-  if (!response.ok) {
-    const errorMsg =
-      body.error?.message ?? body.message ?? `HTTP request failed with status ${response.status}`;
-    throw new Error(errorMsg);
+    clearTimeout(timeoutId);
+
+    const body = (await response.json()) as {
+      success?: boolean;
+      data?: T;
+      error?: { code?: string; message?: string };
+      message?: string;
+    };
+
+    if (!response.ok) {
+      const errorMsg =
+        body.error?.message ?? body.message ?? `HTTP request failed with status ${response.status}`;
+      throw new Error(errorMsg);
+    }
+
+    return (body.data ?? body) as T;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        `Connection timed out: Backend at ${API_BASE_URL} is unreachable. Ensure phone is on the same Wi-Fi.`,
+      );
+    }
+    throw err;
   }
-
-  return (body.data ?? body) as T;
 }
 
 /**

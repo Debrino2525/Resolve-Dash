@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Rider } from '../domain/types/rider';
 import { RiderRepository } from './rider.repository';
 import { RiderService } from './rider.service';
@@ -21,6 +21,31 @@ describe('RiderService', () => {
   });
 
   describe('onboard', () => {
+    it('returns 409 Conflict when the phone number belongs to another rider', async () => {
+      mockRepository.createRiderProfile.mockRejectedValue(
+        Object.assign(new Error('duplicate key'), {
+          code: '23505',
+          constraint: 'riders_phone_number_key',
+        }),
+      );
+
+      await expect(
+        service.onboard(RIDER_ID, undefined, null, {
+          fullName: 'Kofi Mensah',
+          phoneNumber: VALID_PHONE,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rethrows unrelated database errors unchanged', async () => {
+      const dbDown = new Error('connection refused');
+      mockRepository.createRiderProfile.mockRejectedValue(dbDown);
+
+      await expect(
+        service.onboard(RIDER_ID, VALID_PHONE, null, { fullName: 'Kofi Mensah' }),
+      ).rejects.toBe(dbDown);
+    });
+
     it('throws BadRequestException if name is too short', async () => {
       await expect(service.onboard(RIDER_ID, VALID_PHONE, null, { fullName: 'A' })).rejects.toThrow(
         BadRequestException,

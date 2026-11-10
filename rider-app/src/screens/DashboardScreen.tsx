@@ -18,20 +18,7 @@ export interface DashboardScreenProps {
   renewLoading: boolean;
 }
 
-const INITIAL_TRIPS: TripHistoryItem[] = [
-  {
-    id: 'trip-1',
-    route: 'Market Circle → Pipe Ano',
-    time: '12:45 PM',
-    amountGHS: 'GH₵16.00',
-  },
-  {
-    id: 'trip-2',
-    route: 'Harbor Gate 2 → Effiakuma',
-    time: '01:20 PM',
-    amountGHS: 'GH₵22.50',
-  },
-];
+const INITIAL_TRIPS: TripHistoryItem[] = [];
 
 export function DashboardScreen({
   profile,
@@ -44,8 +31,8 @@ export function DashboardScreen({
   const [isOnline, setIsOnline] = useState(false);
   const [activeOrder, setActiveOrder] = useState<IncomingOrderData | null>(null);
   const [activeTripStage, setActiveTripStage] = useState<TripStage | null>(null);
-  const [earnings, setEarnings] = useState(140.0);
-  const [tripsCount, setTripsCount] = useState(8);
+  const [earnings, setEarnings] = useState(0);
+  const [tripsCount, setTripsCount] = useState(0);
   const [recentTrips, setRecentTrips] = useState<TripHistoryItem[]>(INITIAL_TRIPS);
 
   const canGoOnline = subscription ? subscription.canAcceptOrders : false;
@@ -67,13 +54,13 @@ export function DashboardScreen({
       return;
     }
     setActiveOrder({
-      orderId: `ord-${Date.now().toString().slice(-4)}`,
+      orderId: `practice-${Date.now().toString().slice(-4)}`,
       fareGHS: 'GH₵18.50',
-      pickupName: 'Kingsway Supermarket, Market Circle',
+      pickupName: 'Practice pickup',
       pickupDistance: '1.2 km',
-      dropoffName: 'Airport Ridge, Residential Block 4',
+      dropoffName: 'Practice drop-off',
       dropoffDistance: '3.8 km',
-      packageType: 'Fresh Food & Groceries (2 Items)',
+      packageType: 'Practice parcel (not a live order)',
     });
   };
 
@@ -97,13 +84,16 @@ export function DashboardScreen({
     setRecentTrips((prev) => [
       {
         id: `trip-${Date.now()}`,
-        route: 'Market Circle → Airport Ridge',
+        route: 'Practice pickup → Practice drop-off',
         time: 'Just now',
         amountGHS: 'GH₵18.50',
       },
       ...prev,
     ]);
-    Alert.alert('Delivery Completed! 🎉', 'GH₵18.50 credited to your daily shift earnings.');
+    Alert.alert(
+      'Practice delivery finished',
+      'GH₵18.50 was added on this phone only. Live orders and payouts are not connected yet.',
+    );
   };
 
   return (
@@ -115,7 +105,7 @@ export function DashboardScreen({
           isOnline={isOnline}
           onToggleOnline={handleToggleOnline}
           canGoOnline={canGoOnline}
-          hubName="Takoradi Central Hub"
+          hubName="Ghana Network"
         />
 
         {/* Telemetry Pill */}
@@ -124,7 +114,7 @@ export function DashboardScreen({
             activeTripStage
               ? 'RUN IN PROGRESS: IN_TRANSIT'
               : isOnline
-                ? 'STANDBY: LISTENING FOR TAKORADI ORDERS'
+                ? 'STANDBY: LIVE ORDERS NOT CONNECTED'
                 : 'OFFLINE: DUTY SWITCH OFF'
           }
           badgeText={isOnline ? 'GPS ACTIVE' : 'OFFLINE'}
@@ -135,10 +125,10 @@ export function DashboardScreen({
         {activeTripStage && (
           <ActiveTripHUD
             stage={activeTripStage}
-            customerName="Ama Osei"
-            customerPhone="+233 24 999 8888"
-            destination="Airport Ridge, Block 4"
-            roadCue="Turn right onto John Sarbah Rd"
+            customerName="Practice customer"
+            customerPhone="No live number"
+            destination="Practice drop-off"
+            roadCue="Turn-by-turn maps are not connected yet"
             distanceCue="250m"
             onAdvanceStage={handleAdvanceStage}
             onCompleteTrip={handleCompleteTrip}
@@ -157,16 +147,16 @@ export function DashboardScreen({
         {/* Simulation Action Bar (for test runs) */}
         {!activeTripStage && (
           <View style={styles.simCard}>
-            <Text style={styles.simTitle}>DISPATCH SIMULATOR</Text>
+            <Text style={styles.simTitle}>PRACTICE DISPATCH</Text>
             <Text style={styles.simDesc}>
-              Test the Takoradi order dispatch radar & turn-by-turn workflow.
+              This is a local rehearsal. It does not receive live orders from anywhere in Ghana.
             </Text>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSimulateOrder}
               style={[styles.simButton, !isOnline && styles.simButtonDisabled]}
             >
-              <Text style={styles.simButtonText}>Simulate Incoming Order 🔔</Text>
+              <Text style={styles.simButtonText}>Rehearse an incoming order</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -175,8 +165,8 @@ export function DashboardScreen({
         <DailyEarningsCard
           totalEarningsGHS={`GH₵${earnings.toFixed(2)}`}
           tripsCount={tripsCount}
-          onlineHours={isOnline ? '5.8h' : '5.4h'}
-          acceptanceRate="98%"
+          onlineHours="0h"
+          acceptanceRate="—"
           recentTrips={recentTrips}
         />
 

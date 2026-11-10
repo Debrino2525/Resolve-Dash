@@ -1,11 +1,11 @@
 {
   "name": "ghana-delivery-backend",
   "version": "0.1.0",
-  "description": "On-demand motorbike delivery backend for Ghana starting in Takoradi",
+  "description": "On-demand motorbike delivery backend for Ghana",
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/src/main.js",
+    "start": "node dist/main.js",
     "start:dev": "ts-node src/main.ts",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",

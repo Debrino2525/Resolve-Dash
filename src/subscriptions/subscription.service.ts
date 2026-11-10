@@ -13,6 +13,7 @@ import { GHS_CURRENCY, toPesewas } from '../domain/types/money';
 import { CheckoutSession, SubscriptionPayment } from '../domain/types/payment';
 import { DispatchEligibilityResult, Subscription } from '../domain/types/subscription';
 import { deriveWebhookDedupeKey, PaystackWebhookEnvelope } from '../domain/types/webhook';
+import { computeSubscriptionState } from './subscription-state';
 import { SubscriptionRepository } from './subscription.repository';
 
 export const WEEKLY_SUBSCRIPTION_PESEWAS = toPesewas(5000); // GH₵50.00
@@ -45,22 +46,19 @@ export class SubscriptionService {
     const now = new Date();
 
     if (existingPending) {
-      if (now.getTime() < existingPending.checkoutExpiresAt.getTime()) {
-        // Active pending checkout exists
-        const accessCode = existingPending.paystackTransactionId || existingPending.reference;
-        const authUrl = existingPending.paystackTransactionId
-          ? `https://checkout.paystack.com/${existingPending.paystackTransactionId}`
-          : `https://checkout.paystack.com/${existingPending.reference}`;
-
+      const accessCode = existingPending.paystackAccessCode;
+      if (accessCode && now.getTime() < existingPending.checkoutExpiresAt.getTime()) {
+        // Active pending checkout exists: Paystack's hosted page lives at /<access_code>
         return {
-          authorizationUrl: authUrl,
+          authorizationUrl: `https://checkout.paystack.com/${encodeURIComponent(accessCode)}`,
           accessCode,
           reference: existingPending.reference,
           checkoutExpiresAt: existingPending.checkoutExpiresAt,
         };
       }
 
-      // Stale pending payment expired: verify with Paystack first before failing
+      // Expired (or has no access code, so no usable checkout URL can be rebuilt):
+      // verify with Paystack first before failing
       try {
         const verification = await this.billingProvider.verifyTransaction(
           existingPending.reference,
@@ -133,56 +131,78 @@ export class SubscriptionService {
       throw new UnauthorizedException('Invalid JSON payload');
     }
 
-    const dedupeKey = deriveWebhookDedupeKey(envelope);
-    const isNew = await this.repository.recordWebhookEventIfNotExists(
-      dedupeKey,
-      envelope.event,
-      envelope as unknown as Record<string, unknown>,
-    );
+    if (!envelope?.event || !envelope.data) {
+      throw new UnauthorizedException('Invalid webhook payload');
+    }
 
-    if (!isNew) {
+    const dedupeKey = deriveWebhookDedupeKey(envelope);
+    const payload = envelope as unknown as Record<string, unknown>;
+
+    // Fast path: skip the gateway round-trip for events we have already processed.
+    if (await this.repository.webhookEventExists(dedupeKey)) {
       this.logger.warn(`Duplicate webhook received with dedupeKey: ${dedupeKey}`);
       return { received: true, duplicate: true };
     }
 
-    if (envelope.event === 'charge.success') {
-      const reference = envelope.data.reference;
-      if (!reference) {
-        this.logger.error('charge.success webhook missing transaction reference');
-        return { received: true, credited: false };
-      }
-
-      // Query gateway authoritatively to verify exact amount and status
-      const verification = await this.billingProvider.verifyTransaction(reference);
-      if (verification.status !== 'success') {
-        this.logger.warn(
-          `Gateway reported non-success status for ref ${reference}: ${verification.status}`,
-        );
-        return { received: true, credited: false };
-      }
-
-      if (verification.amountPesewas < WEEKLY_SUBSCRIPTION_PESEWAS) {
-        this.logger.error(
-          `Payment amount ${verification.amountPesewas} pesewas is less than required ${WEEKLY_SUBSCRIPTION_PESEWAS}`,
-        );
-        return { received: true, credited: false };
-      }
-
-      const payment = await this.repository.findPaymentByReference(reference);
-      if (!payment) {
-        this.logger.error(`No payment record found for reference ${reference}`);
-        throw new NotFoundException(`Payment record not found for reference: ${reference}`);
-      }
-
-      if (payment.status === 'SUCCESS') {
-        return { received: true, credited: true };
-      }
-
-      await this.creditSuccessfulPayment(payment, verification);
-      return { received: true, credited: true };
+    if (envelope.event !== 'charge.success') {
+      // No side effects for other events: just record them for audit/dedupe.
+      const isNew = await this.repository.recordWebhookEventIfNotExists(
+        dedupeKey,
+        envelope.event,
+        payload,
+      );
+      return isNew ? { received: true } : { received: true, duplicate: true };
     }
 
-    return { received: true };
+    const reference = envelope.data.reference;
+    if (!reference) {
+      this.logger.error('charge.success webhook missing transaction reference');
+      return { received: true, credited: false };
+    }
+
+    // Query gateway authoritatively to verify exact amount and status.
+    // Any throw from here on leaves the dedupe key unrecorded, so Paystack's retry is processed.
+    const verification = await this.billingProvider.verifyTransaction(reference);
+    if (verification.status !== 'success') {
+      this.logger.warn(
+        `Gateway reported non-success status for ref ${reference}: ${verification.status}`,
+      );
+      return { received: true, credited: false };
+    }
+
+    if (verification.currency !== GHS_CURRENCY) {
+      this.logger.error(`Payment ${reference} settled in ${verification.currency}, expected GHS`);
+      await this.repository.recordWebhookEventIfNotExists(dedupeKey, envelope.event, payload);
+      return { received: true, credited: false };
+    }
+
+    if (verification.amountPesewas < WEEKLY_SUBSCRIPTION_PESEWAS) {
+      this.logger.error(
+        `Payment amount ${verification.amountPesewas} pesewas is less than required ${WEEKLY_SUBSCRIPTION_PESEWAS}`,
+      );
+      await this.repository.recordWebhookEventIfNotExists(dedupeKey, envelope.event, payload);
+      return { received: true, credited: false };
+    }
+
+    const payment = await this.repository.findPaymentByReference(reference);
+    if (!payment) {
+      this.logger.error(`No payment record found for reference ${reference}`);
+      throw new NotFoundException(`Payment record not found for reference: ${reference}`);
+    }
+
+    // Record the dedupe key and credit in ONE transaction: if crediting fails the key is
+    // rolled back too, so the event is never marked processed without the rider being credited.
+    const outcome = await this.creditSuccessfulPayment(payment, verification, {
+      dedupeKey,
+      eventType: envelope.event,
+      payload,
+    });
+
+    if (outcome === 'duplicate') {
+      this.logger.warn(`Duplicate webhook received with dedupeKey: ${dedupeKey}`);
+      return { received: true, duplicate: true };
+    }
+    return { received: true, credited: true };
   }
 
   /**
@@ -191,7 +211,10 @@ export class SubscriptionService {
   async getSubscriptionStatus(
     riderId: string,
   ): Promise<{ subscription: Subscription | null; eligibility: DispatchEligibilityResult }> {
-    const subscription = await this.repository.findSubscriptionByRiderId(riderId);
+    const [subscription, onboardingStatus] = await Promise.all([
+      this.repository.findSubscriptionByRiderId(riderId),
+      this.repository.findRiderOnboardingStatus(riderId),
+    ]);
     if (!subscription) {
       return {
         subscription: null,
@@ -200,24 +223,23 @@ export class SubscriptionService {
           reason: 'NO_SUBSCRIPTION_FOUND',
           isMidTrip: false,
           effectiveStatus: 'SUSPENDED',
+          graceEndsAt: null,
         },
       };
     }
 
-    const now = new Date();
-    const trialEnd = subscription.trialEndsAt ? subscription.trialEndsAt.getTime() : 0;
-    const paidUntil = subscription.paidUntil ? subscription.paidUntil.getTime() : 0;
-    const graceEnd = subscription.graceEndsAt ? subscription.graceEndsAt.getTime() : 0;
-    const nowTime = now.getTime();
+    // Derived from timestamps: the stored status column is never advanced as time passes.
+    const state = computeSubscriptionState(subscription, new Date());
 
-    const maxCovered = Math.max(trialEnd, paidUntil);
-    const inGrace = subscription.status === 'GRACE_PERIOD' && nowTime < graceEnd;
-    const canAccept = nowTime < maxCovered || inGrace;
-
-    let reason: string | undefined;
-    if (!canAccept) {
-      reason = 'SUBSCRIPTION_EXPIRED';
-    }
+    // Only admin-approved riders may take orders, whatever their subscription says
+    // (e.g. a rejected rider who was previously granted free access).
+    const approved = onboardingStatus === 'ACTIVE';
+    const canAccept = state.canAccept && approved;
+    const reason = !approved
+      ? 'RIDER_NOT_APPROVED'
+      : !state.canAccept
+        ? 'SUBSCRIPTION_EXPIRED'
+        : undefined;
 
     return {
       subscription,
@@ -225,7 +247,8 @@ export class SubscriptionService {
         canAccept,
         reason,
         isMidTrip: false,
-        effectiveStatus: subscription.status,
+        effectiveStatus: state.effectiveStatus,
+        graceEndsAt: state.graceEndsAt,
       },
     };
   }
@@ -238,9 +261,20 @@ export class SubscriptionService {
       amountPesewas: typeof WEEKLY_SUBSCRIPTION_PESEWAS;
       paidAt: Date | null;
     },
-  ): Promise<void> {
-    await this.db.withTransaction(async (client) => {
-      await this.repository.creditSubscriptionInTransaction(client, {
+    webhookEvent?: { dedupeKey: string; eventType: string; payload: Record<string, unknown> },
+  ): Promise<'credited' | 'already_credited' | 'duplicate'> {
+    return this.db.withTransaction(async (client) => {
+      if (webhookEvent) {
+        const isNew = await this.repository.recordWebhookEventInTransaction(
+          client,
+          webhookEvent.dedupeKey,
+          webhookEvent.eventType,
+          webhookEvent.payload,
+        );
+        if (!isNew) return 'duplicate';
+      }
+
+      const result = await this.repository.creditSubscriptionInTransaction(client, {
         riderId: payment.riderId,
         reference: payment.reference,
         paystackTransactionId: verification.paystackTransactionId,
@@ -248,8 +282,9 @@ export class SubscriptionService {
         amountPesewas: verification.amountPesewas,
         paidAt: verification.paidAt ?? new Date(),
         verifiedAt: new Date(),
-        actorId: 'webhook:paystack',
+        actorId: webhookEvent ? 'webhook:paystack' : 'checkout:reverify',
       });
+      return result ? 'credited' : 'already_credited';
     });
   }
 }

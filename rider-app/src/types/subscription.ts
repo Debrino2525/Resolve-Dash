@@ -21,6 +21,8 @@ export interface SubscriptionDetails {
   paidUntil: string | null;
   graceEndsAt: string | null;
   canAcceptOrders: boolean;
+  /** Server reason when canAcceptOrders is false (e.g. RIDER_NOT_APPROVED, SUBSCRIPTION_EXPIRED). */
+  ineligibleReason?: string | null;
   pricePesewas: Pesewas;
   /**
    * Authoritative server timestamp (ISO 8601).

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AuthUser } from './auth.types';
+import { getSupabaseUrl } from './supabase-config';
 
 interface JwkKey {
   kid: string;
@@ -126,9 +127,15 @@ export class SupabaseAuthGuard implements CanActivate {
 
       try {
         const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
-        const verifier = crypto.createVerify(header.alg === 'ES256' ? 'SHA256' : 'RSA-SHA256');
-        verifier.update(dataToVerify);
-        isSignatureValid = verifier.verify(publicKey, signatureBuffer);
+        // JWS (RFC 7518 §3.4) encodes ES256 signatures as raw 64-byte r||s ("IEEE P1363"),
+        // whereas Node defaults to DER for ECDSA. Without dsaEncoding every real ES256 token
+        // (Supabase's default signing keys) fails verification.
+        isSignatureValid = crypto.verify(
+          'sha256',
+          Buffer.from(dataToVerify),
+          header.alg === 'ES256' ? { key: publicKey, dsaEncoding: 'ieee-p1363' } : publicKey,
+          signatureBuffer,
+        );
       } catch (err) {
         this.logger.warn(
           `Public key verification failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -164,8 +171,7 @@ export class SupabaseAuthGuard implements CanActivate {
       return this.jwksCache;
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL ?? 'https://tllhlkpeepkopzxvxhvc.supabase.co';
-    const jwksUrl = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/.well-known/jwks.json`;
+    const jwksUrl = `${getSupabaseUrl()}/auth/v1/.well-known/jwks.json`;
 
     try {
       const res = await fetch(jwksUrl);

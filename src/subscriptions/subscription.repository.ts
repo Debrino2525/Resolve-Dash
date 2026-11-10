@@ -3,6 +3,7 @@ import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { CurrencyGHS, Pesewas, toPesewas } from '../domain/types/money';
 import { PaymentStatus, SubscriptionPayment } from '../domain/types/payment';
+import { RiderOnboardingStatus } from '../domain/types/rider';
 import { Subscription, SubscriptionStatus } from '../domain/types/subscription';
 
 export interface CreatePaymentRecordParams {
@@ -85,6 +86,7 @@ function mapPaymentRow(row: RawPaymentRow): SubscriptionPayment {
     id: row.id,
     riderId: row.rider_id,
     reference: row.reference,
+    paystackAccessCode: row.paystack_access_code,
     checkoutExpiresAt: new Date(row.checkout_expires_at),
     periodStart: row.period_start ? new Date(row.period_start) : null,
     periodEnd: row.period_end ? new Date(row.period_end) : null,
@@ -113,6 +115,15 @@ export class SubscriptionRepository {
     );
     if (res.rows.length === 0) return null;
     return mapSubscriptionRow(res.rows[0]);
+  }
+
+  /** The rider's admin approval status, or null if the rider has no profile. */
+  async findRiderOnboardingStatus(riderId: string): Promise<RiderOnboardingStatus | null> {
+    const res = await this.db.query<{ onboarding_status: RiderOnboardingStatus }>(
+      `SELECT onboarding_status FROM riders WHERE id = $1`,
+      [riderId],
+    );
+    return res.rows[0]?.onboarding_status ?? null;
   }
 
   async findPendingPaymentByRiderId(riderId: string): Promise<SubscriptionPayment | null> {
@@ -160,33 +171,78 @@ export class SubscriptionRepository {
     );
   }
 
+  /** Returns true if a webhook with this dedupe key has already been processed. */
+  async webhookEventExists(dedupeKey: string): Promise<boolean> {
+    const res = await this.db.query(`SELECT 1 FROM webhook_events WHERE dedupe_key = $1`, [
+      dedupeKey,
+    ]);
+    return res.rows.length > 0;
+  }
+
   /**
    * Attempts to insert deduplication key into webhook_events.
    * Returns true if newly recorded, false if duplicate.
+   *
+   * Only use this outside a transaction for events that need no further work. When the event
+   * triggers side effects, use recordWebhookEventInTransaction so a failure rolls the key back
+   * and the provider's retry is processed instead of being dropped as a duplicate.
    */
   async recordWebhookEventIfNotExists(
     dedupeKey: string,
     eventType: string,
     payload: Record<string, unknown>,
   ): Promise<boolean> {
-    const res = await this.db.query(
-      `INSERT INTO webhook_events (dedupe_key, event_type, payload)
+    return this.insertWebhookEvent(null, dedupeKey, eventType, payload);
+  }
+
+  /** Same as recordWebhookEventIfNotExists, but inside the caller's transaction. */
+  async recordWebhookEventInTransaction(
+    client: PoolClient,
+    dedupeKey: string,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<boolean> {
+    return this.insertWebhookEvent(client, dedupeKey, eventType, payload);
+  }
+
+  private async insertWebhookEvent(
+    client: PoolClient | null,
+    dedupeKey: string,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<boolean> {
+    const sql = `INSERT INTO webhook_events (dedupe_key, event_type, payload)
        VALUES ($1, $2, $3)
        ON CONFLICT (dedupe_key) DO NOTHING
-       RETURNING id`,
-      [dedupeKey, eventType, JSON.stringify(payload)],
-    );
+       RETURNING id`;
+    const values = [dedupeKey, eventType, JSON.stringify(payload)];
+    const res = client ? await client.query(sql, values) : await this.db.query(sql, values);
     return res.rows.length > 0;
   }
 
   /**
-   * Atomically credits the subscription inside a client transaction with a FOR UPDATE row lock.
+   * Atomically credits the subscription inside a client transaction with FOR UPDATE row locks.
+   *
+   * Idempotent: the payment row is locked first, and if it is already SUCCESS (credited by a
+   * concurrent webhook or checkout re-verification) nothing is changed and null is returned.
    */
   async creditSubscriptionInTransaction(
     client: PoolClient,
     params: CreditSubscriptionInTxParams,
-  ): Promise<CreditSubscriptionResult> {
-    // 1. Lock subscription row
+  ): Promise<CreditSubscriptionResult | null> {
+    // 1. Lock the payment row and skip if another path already credited it
+    const lockedPayment = await client.query<{ status: PaymentStatus }>(
+      `SELECT status FROM subscription_payments WHERE reference = $1 FOR UPDATE`,
+      [params.reference],
+    );
+    if (lockedPayment.rows.length === 0) {
+      throw new Error(`Payment record not found for reference: ${params.reference}`);
+    }
+    if (lockedPayment.rows[0].status === 'SUCCESS') {
+      return null;
+    }
+
+    // 2. Lock subscription row
     const subRes = await client.query<RawSubscriptionRow>(
       `SELECT id, rider_id, status, trial_ends_at, paid_until, grace_ends_at, trial_used, reminders_sent, created_at, updated_at
        FROM subscriptions
@@ -202,7 +258,7 @@ export class SubscriptionRepository {
     const currentSub = mapSubscriptionRow(subRes.rows[0]);
     const now = new Date();
 
-    // 2. Compute period_start and period_end
+    // 3. Compute period_start and period_end
     // Invariant: period_start = max(NOW(), COALESCE(paid_until, NOW()))
     const currentPaidUntil = currentSub.paidUntil;
     const periodStart =
@@ -211,7 +267,7 @@ export class SubscriptionRepository {
         : now;
     const periodEnd = new Date(periodStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    // 3. Update subscription_payments to SUCCESS
+    // 4. Update subscription_payments to SUCCESS
     const payRes = await client.query<RawPaymentRow>(
       `UPDATE subscription_payments
        SET status = 'SUCCESS',
@@ -240,7 +296,7 @@ export class SubscriptionRepository {
     }
     const updatedPayment = mapPaymentRow(payRes.rows[0]);
 
-    // 4. Update subscriptions table
+    // 5. Update subscriptions table
     const updatedSubRes = await client.query<RawSubscriptionRow>(
       `UPDATE subscriptions
        SET paid_until = $1,
@@ -253,7 +309,7 @@ export class SubscriptionRepository {
     );
     const updatedSub = mapSubscriptionRow(updatedSubRes.rows[0]);
 
-    // 5. Append-only audit record in subscription_events
+    // 6. Append-only audit record in subscription_events
     await client.query(
       `INSERT INTO subscription_events (
         subscription_id, rider_id, event_type, from_status, to_status, reason, actor_id, metadata
