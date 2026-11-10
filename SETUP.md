@@ -1,5 +1,7 @@
 # SETUP.md — Ghana Delivery Backend & Platform
 
+GhanaDash serves the whole of Ghana. Cities are delivery locations, not separate products.
+
 ## 1. First-Time Supabase Project Setup
 
 ### A. Run migrations
@@ -113,7 +115,19 @@ TEST_DATABASE_URL=postgresql://postgres:<PASSWORD>@<TEST_PROJECT_DB_HOST>:5432/p
 
 ### Admin Account Security & Role Isolation
 * **Creation**: Admin accounts are never registered via public signup. They are provisioned directly in the Supabase Dashboard by the organization owner.
-* **MFA Enforcement**: All admin endpoints enforce Multi-Factor Authentication. The backend guard inspects the JWT claim `aal` (Authenticator Assurance Level) and rejects requests unless `aal === 'aal2'`.
+* **Role check (implemented)**: Every `/admin/api/*` data endpoint is protected by `AdminGuard` (`src/auth/admin.guard.ts`). It verifies the Supabase JWT and requires `app_metadata.role === 'admin'`. No token → 401, non-admin → 403. `user_metadata` is ignored because users can edit it themselves.
+* **MFA (not yet implemented)**: The guard does not check the `aal` claim yet. Requiring `aal === 'aal2'` is planned once the admin page supports a TOTP step.
+
+### Provisioning an admin account
+1. Create the user in Supabase Dashboard → Authentication → Users → **Add user** (email + password, auto-confirm).
+2. Grant the role in the SQL Editor (as `postgres`):
+   ```sql
+   UPDATE auth.users
+   SET raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+   WHERE email = '<admin email>';
+   ```
+3. Set `SUPABASE_ANON_KEY` (and `SUPABASE_URL`) in the backend `.env`. The admin page signs in through `POST /admin/api/login`, which calls Supabase on the server, so the page can stay same-origin under Helmet's CSP.
+4. Open `https://<backend host>/admin` and sign in. The session token is kept in `sessionStorage` and dropped when the tab closes or the token expires (about 1 hour).
 * **Service-Role Key Isolation**: The `SUPABASE_SERVICE_ROLE_KEY` is restricted strictly to the internal Admin Approval module for `app_metadata` synchronization. Everyday rider, consumer, and billing endpoints use the limited `ghana_delivery_app` database role and public JWKS verification.
 
 ---

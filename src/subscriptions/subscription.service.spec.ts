@@ -13,12 +13,12 @@ describe('SubscriptionService', () => {
   let mockDb: jest.Mocked<DatabaseService>;
   let mockRepository: jest.Mocked<SubscriptionRepository>;
   let mockBillingProvider: jest.Mocked<IBillingProvider>;
+  const mockClient = { tag: 'tx-client' } as unknown as PoolClient;
 
   const RIDER_ID = '11111111-1111-1111-1111-111111111111';
   const EMAIL = 'rider@example.com';
 
   beforeEach(() => {
-    const mockClient = {} as unknown as PoolClient;
     mockDb = {
       withTransaction: jest.fn().mockImplementation(async (cb) => cb(mockClient)),
     } as unknown as jest.Mocked<DatabaseService>;
@@ -29,8 +29,10 @@ describe('SubscriptionService', () => {
       findPaymentByReference: jest.fn(),
       createPendingPayment: jest.fn(),
       markPaymentFailed: jest.fn(),
-      recordWebhookEventIfNotExists: jest.fn(),
-      creditSubscriptionInTransaction: jest.fn(),
+      webhookEventExists: jest.fn().mockResolvedValue(false),
+      recordWebhookEventIfNotExists: jest.fn().mockResolvedValue(true),
+      recordWebhookEventInTransaction: jest.fn().mockResolvedValue(true),
+      creditSubscriptionInTransaction: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<SubscriptionRepository>;
 
     mockBillingProvider = {
@@ -49,13 +51,14 @@ describe('SubscriptionService', () => {
         id: 'pay-1',
         riderId: RIDER_ID,
         reference: 'ref-existing-pending',
+        paystackAccessCode: 'access-code-123',
         checkoutExpiresAt: futureDate,
         periodStart: null,
         periodEnd: null,
         amountPesewas: WEEKLY_SUBSCRIPTION_PESEWAS,
         currency: GHS_CURRENCY,
         status: 'PENDING',
-        paystackTransactionId: 'access-code-123',
+        paystackTransactionId: null,
         channel: null,
         verifiedAt: null,
         paidAt: null,
@@ -79,6 +82,7 @@ describe('SubscriptionService', () => {
         id: 'pay-2',
         riderId: RIDER_ID,
         reference: 'ref-stale-pending',
+        paystackAccessCode: 'stale-access',
         checkoutExpiresAt: pastDate,
         periodStart: null,
         periodEnd: null,
@@ -143,7 +147,7 @@ describe('SubscriptionService', () => {
 
     it('returns duplicate: true if dedupe key already exists in DB', async () => {
       mockBillingProvider.verifyWebhookSignature.mockReturnValue(true);
-      mockRepository.recordWebhookEventIfNotExists.mockResolvedValue(false); // Duplicate
+      mockRepository.webhookEventExists.mockResolvedValue(true); // Duplicate
 
       const payload = Buffer.from(
         JSON.stringify({
@@ -160,7 +164,6 @@ describe('SubscriptionService', () => {
 
     it('processes authentic charge.success, verifies with gateway, and credits in transaction', async () => {
       mockBillingProvider.verifyWebhookSignature.mockReturnValue(true);
-      mockRepository.recordWebhookEventIfNotExists.mockResolvedValue(true);
 
       mockBillingProvider.verifyTransaction.mockResolvedValue({
         reference: 'ref-paid-1',
@@ -176,6 +179,7 @@ describe('SubscriptionService', () => {
         id: 'pay-1',
         riderId: RIDER_ID,
         reference: 'ref-paid-1',
+        paystackAccessCode: 'paid-access',
         checkoutExpiresAt: new Date(),
         periodStart: null,
         periodEnd: null,
@@ -203,6 +207,160 @@ describe('SubscriptionService', () => {
       expect(result).toEqual({ received: true, credited: true });
       expect(mockDb.withTransaction).toHaveBeenCalled();
       expect(mockRepository.creditSubscriptionInTransaction).toHaveBeenCalled();
+    });
+  });
+
+  function pendingPayment(overrides: Partial<SubscriptionPayment> = {}): SubscriptionPayment {
+    return {
+      id: 'pay-x',
+      riderId: RIDER_ID,
+      reference: 'ref-x',
+      paystackAccessCode: 'access-x',
+      checkoutExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      periodStart: null,
+      periodEnd: null,
+      amountPesewas: WEEKLY_SUBSCRIPTION_PESEWAS,
+      currency: GHS_CURRENCY,
+      status: 'PENDING',
+      paystackTransactionId: null,
+      channel: null,
+      verifiedAt: null,
+      paidAt: null,
+      failureReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  function chargeSuccessBody(reference: string, id = 500): Buffer {
+    return Buffer.from(
+      JSON.stringify({ event: 'charge.success', data: { id, reference, amount: 5000 } }),
+    );
+  }
+
+  function gatewaySuccess(reference: string, currency = 'GHS'): void {
+    mockBillingProvider.verifyTransaction.mockResolvedValue({
+      reference,
+      status: 'success',
+      amountPesewas: WEEKLY_SUBSCRIPTION_PESEWAS,
+      currency,
+      paystackTransactionId: 'pst-' + reference,
+      channel: 'mobile_money',
+      paidAt: new Date(),
+    });
+  }
+
+  describe('checkout reuse (regression: broken checkout URL)', () => {
+    it('rebuilds the hosted URL from the stored access code, not the reference', async () => {
+      mockRepository.findPendingPaymentByRiderId.mockResolvedValue(
+        pendingPayment({ reference: 'sub_123_abcd', paystackAccessCode: 'ac_real' }),
+      );
+
+      const session = await service.initializeCheckout(RIDER_ID, EMAIL);
+
+      expect(session.authorizationUrl).toBe('https://checkout.paystack.com/ac_real');
+      expect(session.accessCode).toBe('ac_real');
+      expect(session.authorizationUrl).not.toContain('sub_123_abcd');
+    });
+
+    it('starts a fresh checkout when the pending row has no access code', async () => {
+      mockRepository.findPendingPaymentByRiderId.mockResolvedValue(
+        pendingPayment({ reference: 'legacy-ref', paystackAccessCode: null }),
+      );
+      mockBillingProvider.verifyTransaction.mockResolvedValue({
+        reference: 'legacy-ref',
+        status: 'abandoned',
+        amountPesewas: WEEKLY_SUBSCRIPTION_PESEWAS,
+        currency: 'GHS',
+        paystackTransactionId: '1',
+        channel: 'unknown',
+        paidAt: null,
+      });
+      mockBillingProvider.initializeTransaction.mockResolvedValue({
+        authorizationUrl: 'https://checkout.paystack.com/fresh',
+        accessCode: 'fresh',
+        reference: 'sub_fresh',
+      });
+
+      const session = await service.initializeCheckout(RIDER_ID, EMAIL);
+
+      expect(mockRepository.markPaymentFailed).toHaveBeenCalledWith('legacy-ref', 'EXPIRED_UNPAID');
+      expect(session.authorizationUrl).toBe('https://checkout.paystack.com/fresh');
+    });
+  });
+
+  describe('webhook dedupe atomicity (regression: lost payments)', () => {
+    beforeEach(() => {
+      mockBillingProvider.verifyWebhookSignature.mockReturnValue(true);
+    });
+
+    it('records the dedupe key inside the credit transaction, not before it', async () => {
+      gatewaySuccess('ref-a');
+      mockRepository.findPaymentByReference.mockResolvedValue(
+        pendingPayment({ reference: 'ref-a' }),
+      );
+
+      const result = await service.handleWebhook(chargeSuccessBody('ref-a'), 'sig');
+
+      expect(result).toEqual({ received: true, credited: true });
+      expect(mockRepository.recordWebhookEventIfNotExists).not.toHaveBeenCalled();
+      expect(mockRepository.recordWebhookEventInTransaction).toHaveBeenCalledWith(
+        mockClient,
+        'charge.success:ref-a:500',
+        'charge.success',
+        expect.any(Object),
+      );
+      expect(mockRepository.creditSubscriptionInTransaction).toHaveBeenCalledWith(
+        mockClient,
+        expect.objectContaining({ reference: 'ref-a', actorId: 'webhook:paystack' }),
+      );
+    });
+
+    it('does not mark the event processed when gateway verification throws', async () => {
+      mockBillingProvider.verifyTransaction.mockRejectedValue(new Error('network error'));
+
+      await expect(service.handleWebhook(chargeSuccessBody('ref-b'), 'sig')).rejects.toThrow(
+        'network error',
+      );
+      expect(mockRepository.recordWebhookEventIfNotExists).not.toHaveBeenCalled();
+      expect(mockRepository.recordWebhookEventInTransaction).not.toHaveBeenCalled();
+    });
+
+    it('propagates credit failures so the transaction (and dedupe key) rolls back', async () => {
+      gatewaySuccess('ref-c');
+      mockRepository.findPaymentByReference.mockResolvedValue(
+        pendingPayment({ reference: 'ref-c' }),
+      );
+      mockRepository.creditSubscriptionInTransaction.mockRejectedValue(new Error('db down'));
+
+      await expect(service.handleWebhook(chargeSuccessBody('ref-c'), 'sig')).rejects.toThrow(
+        'db down',
+      );
+      expect(mockDb.withTransaction).toHaveBeenCalledTimes(1);
+      expect(mockRepository.recordWebhookEventIfNotExists).not.toHaveBeenCalled();
+    });
+
+    it('reports duplicate when a concurrent delivery already recorded the key', async () => {
+      gatewaySuccess('ref-d');
+      mockRepository.findPaymentByReference.mockResolvedValue(
+        pendingPayment({ reference: 'ref-d' }),
+      );
+      mockRepository.recordWebhookEventInTransaction.mockResolvedValue(false);
+
+      const result = await service.handleWebhook(chargeSuccessBody('ref-d'), 'sig');
+
+      expect(result).toEqual({ received: true, duplicate: true });
+      expect(mockRepository.creditSubscriptionInTransaction).not.toHaveBeenCalled();
+    });
+
+    it('does not credit a payment settled in a non-GHS currency', async () => {
+      gatewaySuccess('ref-e', 'USD');
+
+      const result = await service.handleWebhook(chargeSuccessBody('ref-e'), 'sig');
+
+      expect(result).toEqual({ received: true, credited: false });
+      expect(mockRepository.creditSubscriptionInTransaction).not.toHaveBeenCalled();
     });
   });
 

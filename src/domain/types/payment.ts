@@ -6,6 +6,7 @@ export interface SubscriptionPayment {
   id: string; // UUID v4
   riderId: string;
   reference: string;
+  paystackAccessCode: string | null; // from /transaction/initialize; checkout URL is checkout.paystack.com/<code>
   checkoutExpiresAt: Date;
   periodStart: Date | null;
   periodEnd: Date | null;

@@ -13,7 +13,7 @@ import { Request, Response } from 'express';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
-import { SubscriptionService } from './subscription.service';
+import { SubscriptionService, WEEKLY_SUBSCRIPTION_PESEWAS } from './subscription.service';
 
 export interface InitializeCheckoutRequestBody {
   callbackUrl?: string;
@@ -51,7 +51,7 @@ export class SubscriptionController {
       paidUntil: result.subscription?.paidUntil?.toISOString() ?? null,
       graceEndsAt: result.subscription?.graceEndsAt?.toISOString() ?? null,
       canAcceptOrders: result.eligibility.canAccept,
-      pricePesewas: 5000,
+      pricePesewas: WEEKLY_SUBSCRIPTION_PESEWAS,
       serverTime: new Date().toISOString(),
     };
   }

@@ -47,7 +47,7 @@ describe('E2E: Raw Body Capture for Webhooks', () => {
   });
 
   it('proves the webhook route receives the raw body byte-for-byte as sent without mutation', async () => {
-    // Exact payload with specific spacing, JSON keys, and special characters (e.g. Takoradi emoji / symbols)
+    // Exact payload with specific spacing, JSON keys, and unicode characters.
     const rawPayload = JSON.stringify({
       event: 'charge.success',
       data: {
@@ -56,8 +56,8 @@ describe('E2E: Raw Body Capture for Webhooks', () => {
         amount: 5000,
         currency: 'GHS',
         metadata: {
-          rider_hub: 'Takoradi Market Circle',
-          notes: 'Near Paa Grant roundabout — gate #3',
+          rider_hub: 'Ghana',
+          notes: 'Sample drop-off — gate #3',
         },
       },
     });

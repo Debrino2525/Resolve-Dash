@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AuthUser } from './auth.types';
+import { getSupabaseUrl } from './supabase-config';
 
 interface JwkKey {
   kid: string;
@@ -164,8 +165,7 @@ export class SupabaseAuthGuard implements CanActivate {
       return this.jwksCache;
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL ?? 'https://tllhlkpeepkopzxvxhvc.supabase.co';
-    const jwksUrl = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/.well-known/jwks.json`;
+    const jwksUrl = `${getSupabaseUrl()}/auth/v1/.well-known/jwks.json`;
 
     try {
       const res = await fetch(jwksUrl);

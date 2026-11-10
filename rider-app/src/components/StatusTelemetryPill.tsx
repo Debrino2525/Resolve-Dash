@@ -11,7 +11,7 @@ export interface StatusTelemetryPillProps {
 
 export function StatusTelemetryPill({
   statusText,
-  badgeText = 'TAKORADI HUB',
+  badgeText = 'GHANA',
   variant = 'green',
 }: StatusTelemetryPillProps): React.JSX.Element {
   const getDotColor = (): string => {

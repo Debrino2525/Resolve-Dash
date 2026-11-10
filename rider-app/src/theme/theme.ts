@@ -1,6 +1,6 @@
 /**
  * GhanaDash Rider Design Tokens
- * Tailored for high-glare tropical sunlight & handlebar mount visibility in Takoradi, Ghana.
+ * Tailored for high-glare tropical sunlight and handlebar-mount visibility across Ghana.
  */
 
 export const Colors = {
