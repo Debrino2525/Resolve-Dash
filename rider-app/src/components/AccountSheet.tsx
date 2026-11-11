@@ -10,6 +10,7 @@ import { cedis } from '../types/dispatch';
 import { DocumentChecklist, DocumentChecklistItem } from '../types/documents';
 import { SubscriptionDetails } from '../types/subscription';
 import { formatGhanaLocal } from '../utils/phone';
+import { codeVersionLabel } from '../services/codeVersion';
 import { AuthImage } from './AuthImage';
 import { BrandMark } from './auth/AuthParts';
 import { DocumentUploadSheet } from './DocumentUploadSheet';
@@ -241,7 +242,7 @@ export function AccountSheet({
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
           <Text style={styles.footer}>
-            GhanaDash Rider · v{version}
+            GhanaDash Rider · v{version} · {codeVersionLabel()}
             {'\n'}Powered by Globitech Cyber Solutions
           </Text>
         </ScrollView>

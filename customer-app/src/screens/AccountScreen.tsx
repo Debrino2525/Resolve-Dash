@@ -22,6 +22,7 @@ import { SUPPORT } from '../config/support';
 import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
 import { cedis, CustomerOrder, CustomerProfile, isActive } from '../types/orders';
 import { formatGhanaLocal } from '../utils/phone';
+import { codeVersionLabel } from '../services/codeVersion';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -205,7 +206,7 @@ export function AccountScreen({
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
         <Text style={styles.footer}>
-          GhanaDash · v{version}
+          GhanaDash · v{version} · {codeVersionLabel()}
           {'\n'}Powered by Globitech Cyber Solutions
         </Text>
       </ScrollView>
