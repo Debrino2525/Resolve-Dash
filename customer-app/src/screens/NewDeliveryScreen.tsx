@@ -17,7 +17,7 @@ import { InlineNotice } from '../components/InlineNotice';
 import { PlacePicker } from '../components/PlacePicker';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TactileButton } from '../components/TactileButton';
-import { getCurrentPoint } from '../services/location';
+import { getCurrentFix, GOOD_ACCURACY_M } from '../services/location';
 import { PickedPhoto, pickPhoto } from '../services/photos';
 import { reverseGeocode } from '../services/mapbox';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
@@ -42,6 +42,8 @@ export interface NewDeliveryScreenProps {
 
 interface StopForm {
   place: Place | null;
+  /** Shown under the address, e.g. how precise an automatic GPS pickup is. */
+  note?: string;
   landmark: string;
   gpsCode: string;
   name: string;
@@ -80,11 +82,21 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
   // Prefill pickup with where the customer is now (they can change it).
   useEffect(() => {
     void (async () => {
-      const p = await getCurrentPoint(true);
-      setHere(p);
-      if (p && !initial) {
-        const address = await reverseGeocode(p);
-        setPickup((s) => (s.place ? s : { ...s, place: { ...p, address } }));
+      const fix = await getCurrentFix(true);
+      setHere(fix?.point ?? null);
+      // Only a precise fix may prefill the pickup; a rough one would send the rider to the
+      // wrong place. Either way the customer can check it on the map.
+      if (fix && !initial && fix.accuracy != null && fix.accuracy <= GOOD_ACCURACY_M) {
+        const address = await reverseGeocode(fix.point);
+        setPickup((s) =>
+          s.place
+            ? s
+            : {
+                ...s,
+                place: { ...fix.point, address },
+                note: `From your GPS (about ±${fix.accuracy} m). Tap to check the pin.`,
+              },
+        );
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,8 +267,8 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
         initial={(picking === 'pickup' ? pickup.place : dropoff.place) ?? null}
         onClose={() => setPicking(null)}
         onPick={(place) => {
-          if (picking === 'pickup') setPickup((s) => ({ ...s, place }));
-          else setDropoff((s) => ({ ...s, place }));
+          if (picking === 'pickup') setPickup((s) => ({ ...s, place, note: 'Exact spot confirmed on the map.' }));
+          else setDropoff((s) => ({ ...s, place, note: 'Exact spot confirmed on the map.' }));
           setPicking(null);
           setError(null);
         }}
@@ -296,9 +308,12 @@ function StopSection({
 
       <TouchableOpacity style={styles.placeBtn} onPress={onPickPlace} accessibilityRole="button">
         <Ionicons name="location-outline" size={20} color={form.place ? Colors.textPrimary : Colors.textMuted} />
-        <Text style={[styles.placeText, !form.place && { color: Colors.textMuted }]} numberOfLines={2}>
-          {form.place?.address ?? `Choose ${title.toLowerCase()} location`}
-        </Text>
+        <View style={styles.flex}>
+          <Text style={[styles.placeText, !form.place && { color: Colors.textMuted }]} numberOfLines={2}>
+            {form.place?.address ?? `Choose ${title.toLowerCase()} location`}
+          </Text>
+          {form.place && form.note ? <Text style={styles.placeNote}>{form.note}</Text> : null}
+        </View>
         <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
       </TouchableOpacity>
 
@@ -381,6 +396,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     marginBottom: Spacing.md,
   },
+  placeNote: { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
   placeText: { ...Typography.bodyBold, color: Colors.textPrimary, flex: 1 },
   label: { ...Typography.micro, color: Colors.textMuted, marginBottom: Spacing.xs },
   input: {

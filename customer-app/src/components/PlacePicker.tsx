@@ -10,9 +10,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView from 'react-native-maps';
+import MapView, { MapType } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getCurrentPoint, ACCRA } from '../services/location';
+import { ACCRA, getCurrentFix } from '../services/location';
 import { PlaceSuggestion, reverseGeocode, searchPlaces } from '../services/mapbox';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
 import { Place, Point } from '../types/orders';
@@ -27,10 +27,13 @@ export interface PlacePickerProps {
   onClose: () => void;
 }
 
+/** ~250 m across: close enough to put the pin on a building or gate. */
+const EXACT_DELTA = 0.0025;
+
 /**
- * Choose a stop: search an address/area, use the current location, or drop a pin on the map.
- * Ghanaian addresses are often informal, so pinning on the map plus a landmark note (on the
- * form) is a first-class option, not a fallback.
+ * Choose a stop precisely. Search and GPS only get close: map search in Ghana mostly knows
+ * neighbourhoods, and GPS can be off by tens of metres. So every choice ends on a zoomed-in map
+ * (with satellite view) where the person moves the pin onto the exact spot and confirms it.
  */
 export function PlacePicker({ visible, title, near, initial, onPick, onClose }: PlacePickerProps): React.JSX.Element {
   const [mode, setMode] = useState<'search' | 'map'>('search');
@@ -41,6 +44,8 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
   const [pin, setPin] = useState<Point>(initial ?? near ?? ACCRA);
   const [pinAddress, setPinAddress] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [hint, setHint] = useState<string>('');
+  const [mapType, setMapType] = useState<MapType>('standard');
   const reqId = useRef(0);
 
   useEffect(() => {
@@ -71,17 +76,24 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     return () => clearTimeout(t);
   }, [query, near]);
 
+  /** Every route into the map: centre on a starting point and explain what to do. */
+  const openMap = (start: Point, message: string): void => {
+    setPin(start);
+    setPinAddress(null);
+    setHint(message);
+    setMode('map');
+  };
+
   const useCurrent = async (): Promise<void> => {
     setLocating(true);
-    const p = await getCurrentPoint(true);
-    if (!p) {
-      setLocating(false);
-      setMode('map');
+    const fix = await getCurrentFix(true);
+    setLocating(false);
+    if (!fix) {
+      openMap(near ?? ACCRA, "We couldn't get your GPS position. Move the map so the pin sits on the exact spot.");
       return;
     }
-    const address = await reverseGeocode(p);
-    setLocating(false);
-    onPick({ ...p, address });
+    const acc = fix.accuracy != null ? ` (accurate to about ±${fix.accuracy} m)` : '';
+    openMap(fix.point, `This is your GPS position${acc}. Move the map if the pin isn't exactly on the spot.`);
   };
 
   const onRegionDone = (r: { latitude: number; longitude: number }): void => {
@@ -100,8 +112,13 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="fullScreen">
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Close">
-            <Ionicons name="close" size={24} color={Colors.textPrimary} />
+          <TouchableOpacity
+            onPress={mode === 'map' ? () => setMode('search') : onClose}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel={mode === 'map' ? 'Back to search' : 'Close'}
+          >
+            <Ionicons name={mode === 'map' ? 'arrow-back' : 'close'} size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title} numberOfLines={1}>
             {title}
@@ -115,7 +132,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               <Ionicons name="search" size={20} color={Colors.textMuted} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search street, area or place"
+                placeholder="Search area, street or town"
                 placeholderTextColor={Colors.textMuted}
                 value={query}
                 onChangeText={setQuery}
@@ -134,28 +151,57 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
                   <Ionicons name="locate" size={20} color={Colors.dispatchGreenLight} />
                 )}
               </View>
-              <Text style={styles.optionText}>Use my current location</Text>
+              <View style={styles.flex}>
+                <Text style={styles.optionText}>{locating ? 'Getting a precise GPS fix…' : 'Use my current location'}</Text>
+                <Text style={styles.optionSub}>Best when you are at the spot</Text>
+              </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.option} onPress={() => setMode('map')} accessibilityRole="button">
+            <TouchableOpacity
+              style={styles.option}
+              onPress={() =>
+                openMap(
+                  initial ?? near ?? ACCRA,
+                  initial
+                    ? 'Move the map so the pin sits exactly on the spot.'
+                    : 'Move the map to the right street, then place the pin on the exact building or gate.',
+                )
+              }
+              accessibilityRole="button"
+            >
               <View style={[styles.optionIcon, { backgroundColor: Colors.harborBlueGlow }]}>
                 <Ionicons name="map" size={20} color={Colors.harborBlue} />
               </View>
-              <Text style={styles.optionText}>Choose on the map</Text>
+              <View style={styles.flex}>
+                <Text style={styles.optionText}>{initial ? 'Adjust the pin on the map' : 'Choose on the map'}</Text>
+                <Text style={styles.optionSub}>Satellite view helps find the exact building</Text>
+              </View>
             </TouchableOpacity>
 
             <FlatList
               data={results}
               keyExtractor={(r) => r.id}
               keyboardShouldPersistTaps="handled"
+              ListHeaderComponent={
+                results.length > 0 ? (
+                  <Text style={styles.areaNote}>Search finds the area. You'll set the exact spot on the map next.</Text>
+                ) : undefined
+              }
               ListEmptyComponent={
                 query.trim().length >= 2 && !searching ? (
-                  <Text style={styles.empty}>
-                    No matches. Try a nearby street or area, or choose the spot on the map.
-                  </Text>
+                  <Text style={styles.empty}>No matches. Try the area or town name, or choose the spot on the map.</Text>
                 ) : undefined
               }
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.result} onPress={() => onPick(item)} accessibilityRole="button">
+                <TouchableOpacity
+                  style={styles.result}
+                  onPress={() =>
+                    openMap(
+                      item,
+                      `${item.title} is the general area. Move the map so the pin sits on the exact building or gate.`,
+                    )
+                  }
+                  accessibilityRole="button"
+                >
                   <Ionicons name="location-outline" size={20} color={Colors.textMuted} />
                   <View style={styles.flex}>
                     <Text style={styles.resultTitle} numberOfLines={1}>
@@ -167,6 +213,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
                       </Text>
                     ) : null}
                   </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
                 </TouchableOpacity>
               )}
             />
@@ -175,29 +222,48 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
           <View style={styles.flex}>
             <MapView
               style={StyleSheet.absoluteFill}
-              initialRegion={{ latitude: pin.lat, longitude: pin.lng, latitudeDelta: 0.008, longitudeDelta: 0.008 }}
+              initialRegion={{ latitude: pin.lat, longitude: pin.lng, latitudeDelta: EXACT_DELTA, longitudeDelta: EXACT_DELTA }}
               onRegionChangeComplete={onRegionDone}
+              mapType={mapType}
               showsUserLocation
+              showsBuildings
               rotateEnabled={false}
               pitchEnabled={false}
               toolbarEnabled={false}
             />
+            {/* The exact point is the dot; the pin's tip sits on it. */}
             <View pointerEvents="none" style={styles.pinWrap}>
-              <Ionicons name="location" size={44} color={Colors.dispatchGreen} style={styles.pinIcon} />
+              <Ionicons name="location" size={44} color={Colors.dangerRed} style={styles.pinIcon} />
+              <View style={styles.pinDot} />
             </View>
+
+            <View style={styles.hintBox} pointerEvents="none">
+              <Text style={styles.hintText}>{hint}</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.mapTypeBtn}
+              onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
+              accessibilityRole="button"
+              accessibilityLabel={mapType === 'standard' ? 'Show satellite view' : 'Show map view'}
+            >
+              <Ionicons name={mapType === 'standard' ? 'earth' : 'map-outline'} size={20} color={Colors.textPrimary} />
+              <Text style={styles.mapTypeText}>{mapType === 'standard' ? 'Satellite' : 'Map'}</Text>
+            </TouchableOpacity>
+
             <View style={styles.pinSheet}>
-              <Text style={styles.pinLabel}>Move the map to place the pin</Text>
+              <Text style={styles.pinLabel}>Pin location</Text>
               <Text style={styles.pinAddress} numberOfLines={2}>
                 {resolving || !pinAddress ? 'Finding address…' : pinAddress}
               </Text>
               <TactileButton
-                title="Confirm this spot"
-                onPress={() => onPick({ ...pin, address: pinAddress ?? `Pinned location (${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)})` })}
+                title="Confirm exact spot"
+                onPress={() =>
+                  onPick({ ...pin, address: pinAddress ?? `Pinned location (${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)})` })
+                }
                 disabled={resolving}
               />
-              <TouchableOpacity onPress={() => setMode('search')} style={styles.linkBtn} accessibilityRole="button">
-                <Text style={styles.link}>Search instead</Text>
-              </TouchableOpacity>
+              <Text style={styles.tip}>Tip: add a landmark on the next screen, e.g. "blue gate opposite the church".</Text>
             </View>
           </View>
         )}
@@ -240,6 +306,16 @@ const styles = StyleSheet.create({
   },
   optionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   optionText: { ...Typography.bodyBold, color: Colors.textPrimary },
+  optionSub: { ...Typography.caption, color: Colors.textMuted },
+  areaNote: {
+    ...Typography.caption,
+    color: Colors.amberLight,
+    backgroundColor: Colors.amberDark,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    padding: Spacing.sm,
+    borderRadius: Radii.sm,
+  },
   result: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -253,7 +329,41 @@ const styles = StyleSheet.create({
   resultSub: { ...Typography.caption, color: Colors.textMuted },
   empty: { ...Typography.body, color: Colors.textSecondary, padding: Spacing.xl, textAlign: 'center' },
   pinWrap: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  // Lift the icon by its own height so its tip touches the centre dot.
   pinIcon: { marginBottom: 44 },
+  pinDot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.dangerRed,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  hintBox: {
+    position: 'absolute',
+    top: Spacing.md,
+    left: Spacing.md,
+    right: 110,
+    backgroundColor: 'rgba(7, 9, 13, 0.82)',
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+  },
+  hintText: { ...Typography.caption, color: '#FFFFFF' },
+  mapTypeBtn: {
+    position: 'absolute',
+    top: Spacing.md,
+    right: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: TOUCH_TARGET,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radii.pill,
+    backgroundColor: Colors.card,
+    ...Elevation.floating,
+  },
+  mapTypeText: { ...Typography.bodyBold, color: Colors.textPrimary },
   pinSheet: {
     position: 'absolute',
     left: 0,
@@ -268,6 +378,5 @@ const styles = StyleSheet.create({
   },
   pinLabel: { ...Typography.caption, color: Colors.textMuted },
   pinAddress: { ...Typography.h3, color: Colors.textPrimary, marginBottom: Spacing.sm },
-  linkBtn: { alignSelf: 'center', padding: Spacing.sm },
-  link: { ...Typography.bodyBold, color: Colors.dispatchGreenLight },
+  tip: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
 });
