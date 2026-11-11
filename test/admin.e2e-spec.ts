@@ -8,6 +8,7 @@ import { AdminController } from '../src/admin/admin.controller';
 import { AdminService } from '../src/admin/admin.service';
 import { AdminGuard } from '../src/auth/admin.guard';
 import { AdminInsightsService } from '../src/admin/admin-insights.service';
+import { AdminOperationsService } from '../src/admin/admin-operations.service';
 import { RiderDocumentsService } from '../src/riders/rider-documents.service';
 import { SupabaseAuthGuard } from '../src/auth/supabase-auth.guard';
 
@@ -19,6 +20,13 @@ describe('Admin portal E2E (auth lockdown)', () => {
     getRiderDetail: jest.fn(),
     listPayments: jest.fn(),
   } as unknown as jest.Mocked<AdminInsightsService>;
+  const mockOperations = {
+    listDeliveries: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 }),
+    getDelivery: jest.fn().mockResolvedValue({ id: 'x' }),
+    listCustomers: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 }),
+    getCustomer: jest.fn().mockResolvedValue({ id: 'x' }),
+    getLive: jest.fn().mockResolvedValue({ generatedAt: 'now', riders: [], deliveries: [] }),
+  } as unknown as jest.Mocked<AdminOperationsService>;
   const mockDocuments = {
     getChecklistForAdmin: jest.fn(),
     readFileForAdmin: jest.fn(),
@@ -72,6 +80,7 @@ describe('Admin portal E2E (auth lockdown)', () => {
       providers: [
         { provide: AdminService, useValue: mockAdminService },
         { provide: AdminInsightsService, useValue: mockInsights },
+        { provide: AdminOperationsService, useValue: mockOperations },
         { provide: RiderDocumentsService, useValue: mockDocuments },
         AdminAuthService,
         SupabaseAuthGuard,
@@ -246,6 +255,82 @@ describe('Admin portal E2E (auth lockdown)', () => {
         'Blurry photo',
         '55555555-5555-5555-5555-555555555555',
       );
+    });
+  });
+
+  describe('deliveries, customers and live map', () => {
+    const ORDER_ID = '66666666-6666-6666-6666-666666666666';
+    const readRoutes = [
+      '/admin/api/deliveries',
+      `/admin/api/deliveries/${ORDER_ID}`,
+      '/admin/api/customers',
+      `/admin/api/customers/${ORDER_ID}`,
+      '/admin/api/live',
+      '/admin/api/config',
+    ];
+
+    it.each(readRoutes)('requires an admin for GET %s', async (path) => {
+      await request(app.getHttpServer()).get(path).expect(401);
+      await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${riderToken()}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+    });
+
+    it('passes parsed filters to the service and ignores junk', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/api/deliveries?status=active&q=GD-AB&page=2')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+      expect(mockOperations.listDeliveries).toHaveBeenLastCalledWith({
+        filter: 'ACTIVE',
+        q: 'GD-AB',
+        page: 2,
+      });
+      await request(app.getHttpServer())
+        .get('/admin/api/deliveries?status=bogus&status=x&page=-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+      expect(mockOperations.listDeliveries).toHaveBeenLastCalledWith({
+        filter: null,
+        q: undefined,
+        page: 1,
+      });
+    });
+
+    it('rejects non-UUID order and customer ids with 400', async () => {
+      for (const path of ['/admin/api/deliveries/GD-ABC123', '/admin/api/customers/nope']) {
+        await request(app.getHttpServer())
+          .get(path)
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .expect(400);
+      }
+    });
+
+    it('only hands out a public pk.* Mapbox token', async () => {
+      const original = process.env.ADMIN_MAPBOX_PUBLIC_TOKEN;
+      try {
+        process.env.ADMIN_MAPBOX_PUBLIC_TOKEN = 'sk.secret-token';
+        const secret = await request(app.getHttpServer())
+          .get('/admin/api/config')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .expect(200);
+        expect(secret.body).toEqual({ mapboxToken: null });
+
+        process.env.ADMIN_MAPBOX_PUBLIC_TOKEN = 'pk.public-token';
+        const pub = await request(app.getHttpServer())
+          .get('/admin/api/config')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .expect(200);
+        expect(pub.body).toEqual({ mapboxToken: 'pk.public-token' });
+      } finally {
+        if (original === undefined) delete process.env.ADMIN_MAPBOX_PUBLIC_TOKEN;
+        else process.env.ADMIN_MAPBOX_PUBLIC_TOKEN = original;
+      }
     });
   });
 
