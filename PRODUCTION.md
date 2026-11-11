@@ -82,8 +82,11 @@ fix.
    Zero Trust → Access → Applications → Self-hosted → `ghanadash-admin.globitechcybersolutions.com`
    → policy "Allow" → emails = your admin emails. Admins then pass a Cloudflare email code
    *before* the portal's own Supabase admin sign-in. With `ADMIN_HOST` set, the portal is not
-   reachable through the API hostname, so this can't be bypassed. (Access needs the record
-   **Proxied**.)
+   reachable through the API hostname. (Access needs the record **Proxied**; leave the API
+   record DNS only.) Then set `CF_ACCESS_TEAM_DOMAIN` (e.g. `yourteam.cloudflareaccess.com`) and
+   `CF_ACCESS_AUD` (the app's Audience tag) on the server: every admin-host request must then
+   carry a valid Access pass, so the portal stays locked (403) even if the Access app or the
+   proxied record is removed by mistake.
 5. Check: `https://ghanadash-api.globitechcybersolutions.com/health` →
    `{"status":"ok","database":"ok"}`, and the admin hostname opens the portal.
 

@@ -18,6 +18,11 @@ services:
         value: "1"
       - key: ADMIN_HOST
         value: ghanadash-admin.globitechcybersolutions.com
+      # Cloudflare Access in front of the admin host; the server also checks its signed pass.
+      - key: CF_ACCESS_TEAM_DOMAIN
+        value: lucky-disk-f384.cloudflareaccess.com
+      - key: CF_ACCESS_AUD
+        value: fa09cd8ca2cf41f3e0e588fbfe94ec16bced055191ec618303a85381943db467
       - key: PAYSTACK_CALLBACK_URL
         value: https://ghanadash-api.globitechcybersolutions.com/subscriptions/callback
       - key: MNOTIFY_SENDER_ID

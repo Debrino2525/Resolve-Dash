@@ -8,6 +8,7 @@ import * as express from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { productionEnvProblems } from './config/production-env';
+import { cloudflareAccessFromEnv } from './admin/cloudflare-access';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -40,6 +41,15 @@ async function bootstrap(): Promise<void> {
   // not offered there, so the admin hostname can sit behind extra protection (Cloudflare Access).
   const adminHost = process.env.ADMIN_HOST?.trim().toLowerCase();
   if (adminHost) {
+    // Defence in depth: when configured, every admin-host request must carry a valid Cloudflare
+    // Access pass for our Access app, so the portal stays locked even if Access or the proxied
+    // DNS record is removed by mistake.
+    const access = cloudflareAccessFromEnv();
+    if (!access) {
+      logger.warn(
+        'ADMIN_HOST is set without CF_ACCESS_TEAM_DOMAIN/CF_ACCESS_AUD: the server does not check Cloudflare Access.',
+      );
+    }
     app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
       const isAdminPath = req.path === '/admin' || req.path.startsWith('/admin/');
       if (req.hostname.toLowerCase() !== adminHost) {
@@ -47,9 +57,25 @@ async function bootstrap(): Promise<void> {
         if (isAdminPath) return res.status(404).json({ statusCode: 404, message: 'Not found' });
         return next();
       }
-      if (req.path === '/') return res.redirect(302, '/admin');
-      if (req.path === '/health' || isAdminPath) return next();
-      return res.status(404).json({ statusCode: 404, message: 'Not found' });
+      if (req.path === '/health') return next();
+      if (req.path !== '/' && !isAdminPath) {
+        return res.status(404).json({ statusCode: 404, message: 'Not found' });
+      }
+      const proceed = (): void => {
+        if (req.path === '/') return res.redirect(302, '/admin');
+        next();
+      };
+      if (!access) return proceed();
+      access
+        .verify(req.header('cf-access-jwt-assertion'))
+        .then((identity) => {
+          if (!identity) {
+            res.status(403).json({ statusCode: 403, message: 'Admin access requires sign-in.' });
+            return;
+          }
+          proceed();
+        })
+        .catch(next);
     });
   }
 
