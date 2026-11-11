@@ -4,6 +4,8 @@ import { DatabaseModule } from '../database/database.module';
 import { SupabaseStorageClient } from '../storage/supabase-storage.client';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { DispatchService } from './dispatch.service';
+import { OrderCallController } from './order-call.controller';
+import { OrderCallService } from './order-call.service';
 import { OrderMediaController } from './order-media.controller';
 import { OrderMediaService } from './order-media.service';
 import { OrderController } from './order.controller';
@@ -14,11 +16,17 @@ import { RiderDispatchService } from './rider-dispatch.service';
 
 @Module({
   imports: [DatabaseModule, CustomersModule, SubscriptionsModule],
-  controllers: [OrderController, OrderMediaController, RiderDispatchController],
+  controllers: [
+    OrderController,
+    OrderMediaController,
+    OrderCallController,
+    RiderDispatchController,
+  ],
   providers: [
     OrderRepository,
     OrderService,
     OrderMediaService,
+    OrderCallService,
     DispatchService,
     RiderDispatchService,
     SupabaseStorageClient,

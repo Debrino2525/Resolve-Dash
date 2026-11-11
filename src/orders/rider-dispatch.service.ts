@@ -6,11 +6,13 @@ import {
   HttpStatus,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { SubscriptionService } from '../subscriptions/subscription.service';
 import { DispatchService } from './dispatch.service';
+import { OrderCallService } from './order-call.service';
 import { OrderRepository } from './order.repository';
 import { DeliveryOrder, PackageType, RiderJobView, RiderOfferView } from './order.types';
 
@@ -61,6 +63,7 @@ export class RiderDispatchService {
     private readonly orders: OrderRepository,
     private readonly subscriptions: SubscriptionService,
     private readonly dispatch: DispatchService,
+    @Optional() private readonly calls?: OrderCallService,
   ) {}
 
   /** Heartbeat while on duty (every ~10 s) and the on/off switch. Returns offers and job. */
@@ -311,6 +314,7 @@ export class RiderDispatchService {
       pickedUpAt: o.pickedUpAt,
       hasPackagePhoto: Boolean(o.packagePhotoPath),
       messageCount: await this.orders.messageCount(o.id),
+      call: this.calls?.summaryFor(o.id, 'RIDER', o.status) ?? null,
     };
   }
 }

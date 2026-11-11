@@ -1,3 +1,4 @@
+import type { CallSummary } from './order-call.service';
 export type OrderStatus =
   'SEARCHING' | 'ASSIGNED' | 'PICKED_UP' | 'DELIVERED' | 'CANCELLED' | 'NO_RIDER';
 export type PackageType = 'DOCUMENT' | 'SMALL_PARCEL' | 'FOOD' | 'LARGE_ITEM';
@@ -79,6 +80,8 @@ export interface CustomerOrderView extends Omit<
   rider: AssignedRider | null;
   hasPackagePhoto: boolean;
   messageCount: number;
+  /** Current in-app call on this delivery (ringing, active or just ended), if any. */
+  call: CallSummary | null;
 }
 
 /** What the rider app receives for its current job: no PIN, but both contacts. */
@@ -100,6 +103,8 @@ export interface RiderJobView {
   pickedUpAt: string | null;
   hasPackagePhoto: boolean;
   messageCount: number;
+  /** Current in-app call on this delivery (ringing, active or just ended), if any. */
+  call: CallSummary | null;
 }
 
 export interface RiderOfferView {

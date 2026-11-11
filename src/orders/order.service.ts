@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { SignedTokens } from '../common/signed-token';
@@ -11,6 +12,7 @@ import { CustomerRepository } from '../customers/customer.repository';
 import { DatabaseService } from '../database/database.service';
 import { DispatchService } from './dispatch.service';
 import { haversineMeters, isInGhana, LatLng, roadEstimate } from './geo';
+import { OrderCallService } from './order-call.service';
 import { OrderRepository } from './order.repository';
 import {
   CustomerOrderView,
@@ -71,6 +73,7 @@ export class OrderService {
     private readonly orders: OrderRepository,
     private readonly customers: CustomerRepository,
     private readonly dispatch: DispatchService,
+    @Optional() private readonly calls?: OrderCallService,
   ) {}
 
   async quote(
@@ -286,7 +289,8 @@ export class OrderService {
     // Live position only while the rider is actually on this job.
     if (rider && order.status === 'DELIVERED') rider.location = null;
     const messageCount = order.riderId ? await this.orders.messageCount(order.id) : 0;
-    return { ...rest, rider, hasPackagePhoto: Boolean(packagePhotoPath), messageCount };
+    const call = this.calls?.summaryFor(order.id, 'CUSTOMER', order.status) ?? null;
+    return { ...rest, rider, hasPackagePhoto: Boolean(packagePhotoPath), messageCount, call };
   }
 }
 

@@ -204,10 +204,12 @@ describe('OrderService recent places', () => {
     const home = { ...stop(4.8975, -1.7553), address: 'Market Circle', landmark: 'Blue gate' };
     const homeAgain = { ...stop(4.89755, -1.75532), address: 'Market Circle (old)' }; // ~6 m away
     const office = { ...stop(4.9201, -1.7802), address: 'Anaji', gpsCode: 'WS-123-4567' };
-    const listForCustomer = jest.fn().mockResolvedValue([
-      order({ dropoff: home, pickup: office, requestedAt: '2026-11-10T10:00:00.000Z' }),
-      order({ dropoff: homeAgain, pickup: office, requestedAt: '2026-11-01T10:00:00.000Z' }),
-    ]);
+    const listForCustomer = jest
+      .fn()
+      .mockResolvedValue([
+        order({ dropoff: home, pickup: office, requestedAt: '2026-11-10T10:00:00.000Z' }),
+        order({ dropoff: homeAgain, pickup: office, requestedAt: '2026-11-01T10:00:00.000Z' }),
+      ]);
     const service = new OrderService(
       {} as DatabaseService,
       { listForCustomer } as unknown as OrderRepository,
