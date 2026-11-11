@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatDuration } from '../services/routing';
 import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
@@ -14,7 +14,12 @@ export interface IncomingOrderSheetProps {
   busy: boolean;
 }
 
-/** Live order offer. Counts down to the server's expiry; dispatch moves on when it runs out. */
+/**
+ * Live order offer, shown in a Modal so it is always the top layer (on Android, elevation of the
+ * map sheet could otherwise draw over it while still letting taps through to hidden buttons).
+ * Counts down to the server's expiry; if the rider does nothing, the offer simply lapses and is
+ * NOT accepted.
+ */
 export function IncomingOrderSheet({
   offer,
   onAccept,
@@ -34,68 +39,81 @@ export function IncomingOrderSheet({
   }, [offer.id]);
 
   return (
-    <View style={styles.overlay}>
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.lg }]}>
-        <View style={styles.headerRow}>
-          <View style={styles.live}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>New delivery request</Text>
+    <Modal
+      visible
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={() => undefined}
+    >
+      <View style={styles.overlay}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.lg }]}>
+          <View style={styles.headerRow}>
+            <View style={styles.live}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>New delivery request</Text>
+            </View>
+            <View style={[styles.timer, left <= 5 && styles.timerUrgent]}>
+              <Text style={[styles.timerText, left <= 5 && { color: Colors.dangerRed }]}>
+                {left}s
+              </Text>
+            </View>
           </View>
-          <View style={[styles.timer, left <= 5 && styles.timerUrgent]}>
-            <Text style={[styles.timerText, left <= 5 && { color: Colors.dangerRed }]}>{left}s</Text>
-          </View>
-        </View>
 
-        <View style={styles.fareRow}>
-          <View>
-            <Text style={styles.fare}>{cedis(offer.farePesewas)}</Text>
-            <Text style={styles.fareSub}>Collect in cash at drop-off</Text>
+          <View style={styles.fareRow}>
+            <View>
+              <Text style={styles.fare}>{cedis(offer.farePesewas)}</Text>
+              <Text style={styles.fareSub}>Collect in cash at drop-off</Text>
+            </View>
+            <View style={styles.chips}>
+              <Text style={styles.chip}>{PACKAGE_LABEL[offer.packageType]}</Text>
+              {offer.fragile && <Text style={[styles.chip, styles.chipWarn]}>Fragile</Text>}
+            </View>
           </View>
-          <View style={styles.chips}>
-            <Text style={styles.chip}>{PACKAGE_LABEL[offer.packageType]}</Text>
-            {offer.fragile && <Text style={[styles.chip, styles.chipWarn]}>Fragile</Text>}
+
+          <View style={styles.route}>
+            <Stop
+              icon="cube"
+              color={Colors.dispatchGreen}
+              label={`Pickup · ${formatDistance(offer.distanceToPickupMeters)} from you`}
+              address={offer.pickup.address}
+              landmark={offer.pickup.landmark}
+            />
+            <View style={styles.connector} />
+            <Stop
+              icon="flag"
+              color={Colors.harborBlue}
+              label={`Drop-off · ${formatDistance(offer.distanceMeters)} trip, ~${formatDuration(offer.durationSeconds)}`}
+              address={offer.dropoff.address}
+              landmark={offer.dropoff.landmark}
+            />
           </View>
-        </View>
 
-        <View style={styles.route}>
-          <Stop
-            icon="cube"
-            color={Colors.dispatchGreen}
-            label={`Pickup · ${formatDistance(offer.distanceToPickupMeters)} from you`}
-            address={offer.pickup.address}
-            landmark={offer.pickup.landmark}
-          />
-          <View style={styles.connector} />
-          <Stop
-            icon="flag"
-            color={Colors.harborBlue}
-            label={`Drop-off · ${formatDistance(offer.distanceMeters)} trip, ~${formatDuration(offer.durationSeconds)}`}
-            address={offer.dropoff.address}
-            landmark={offer.dropoff.landmark}
-          />
-        </View>
-
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.btn, styles.decline]}
-            onPress={onDecline}
-            disabled={busy}
-            accessibilityRole="button"
-          >
-            <Text style={styles.declineText}>Decline</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, styles.accept, busy && { opacity: 0.6 }]}
-            onPress={onAccept}
-            disabled={busy || left === 0}
-            accessibilityRole="button"
-          >
-            <MaterialCommunityIcons name="moped" size={22} color={Colors.onBrand} />
-            <Text style={styles.acceptText}>{busy ? 'Accepting…' : 'Accept'}</Text>
-          </TouchableOpacity>
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.btn, styles.decline]}
+              onPress={onDecline}
+              disabled={busy}
+              accessibilityRole="button"
+            >
+              <Text style={styles.declineText}>Decline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btn, styles.accept, busy && { opacity: 0.6 }]}
+              onPress={onAccept}
+              disabled={busy || left === 0}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="moped" size={22} color={Colors.onBrand} />
+              <Text style={styles.acceptText}>{busy ? 'Accepting…' : 'Accept'}</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.lapse}>
+            {left > 0 ? 'No answer means no: the order goes to the next rider.' : 'Offer expired'}
+          </Text>
         </View>
       </View>
-    </View>
+    </Modal>
   );
 }
 
@@ -180,12 +198,24 @@ const styles = StyleSheet.create({
   chipWarn: { color: Colors.amberLight, backgroundColor: Colors.amberDark },
   route: { backgroundColor: Colors.background, borderRadius: Radii.lg, padding: Spacing.lg },
   stop: { flexDirection: 'row', gap: Spacing.md },
-  stopIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  stopIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   stopText: { flex: 1 },
   stopLabel: { ...Typography.caption, color: Colors.textMuted },
   stopAddress: { ...Typography.bodyBold, color: Colors.textPrimary },
   stopLandmark: { ...Typography.caption, color: Colors.textSecondary },
-  connector: { width: 2, height: 18, backgroundColor: Colors.cardBorder, marginLeft: 15, marginVertical: 4 },
+  connector: {
+    width: 2,
+    height: 18,
+    backgroundColor: Colors.cardBorder,
+    marginLeft: 15,
+    marginVertical: 4,
+  },
   actions: { flexDirection: 'row', gap: Spacing.md },
   btn: {
     minHeight: 56,
@@ -195,8 +225,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  decline: { flex: 1, backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.cardBorder },
+  decline: {
+    flex: 1,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
   declineText: { ...Typography.bodyBold, color: Colors.textSecondary },
   accept: { flex: 2, backgroundColor: Colors.dispatchGreen },
   acceptText: { ...Typography.h3, color: Colors.onBrand },
+  lapse: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
 });

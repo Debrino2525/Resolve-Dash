@@ -12,6 +12,7 @@ import { PinEntrySheet } from '../components/PinEntrySheet';
 import { initialsOf } from '../components/ScreenTopBar';
 import { SubscriptionCard } from '../components/SubscriptionCard';
 import { useDispatch } from '../services/dispatch';
+import { useOfferAlert } from '../services/offerAlert';
 import { getCurrentCoords, LatLng, useRiderLocation } from '../services/location';
 import { useTurnByTurn } from '../services/navigation';
 import { fetchRoadRoute, formatDuration, RoadRoute } from '../services/routing';
@@ -67,6 +68,9 @@ export function DashboardScreen({
   const job = dispatch.state?.job ?? null;
   const offer = dispatch.state?.offer ?? null;
   const online = dispatch.online;
+  const showingOffer = Boolean(offer && !job);
+  // Ring + vibrate until the rider answers or the offer lapses.
+  useOfferAlert(showingOffer && offer ? offer.id : null);
 
   useEffect(() => {
     setTracking(online || Boolean(job));
@@ -371,7 +375,7 @@ export function DashboardScreen({
         />
       )}
 
-      {!navigating && (
+      {!navigating && !showingOffer && (
         <>
           {/* Floating top bar */}
           <View style={[styles.topBar, { top: insets.top + Spacing.sm }]} pointerEvents="box-none">
