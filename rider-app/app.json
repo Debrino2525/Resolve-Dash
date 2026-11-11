@@ -21,22 +21,19 @@
       },
       "package": "com.ghanadash.rider",
       "permissions": [
-        "CAMERA",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "VIBRATE",
-        "RECORD_AUDIO",
-        "MODIFY_AUDIO_SETTINGS",
-        "BLUETOOTH_CONNECT"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.VIBRATE",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "blockedPermissions": [
         "ACCESS_BACKGROUND_LOCATION"
       ]
-    },
-    "extra": {
-      "eas": {
-        "projectId": "d050d3ed-baaf-49d0-b629-14c7bc7fac95"
-      }
     },
     "plugins": [
       "expo-asset",
@@ -74,6 +71,12 @@
         }
       ]
     ],
-    "icon": "./assets/images/icon.png"
+    "icon": "./assets/images/icon.png",
+    "owner": "resolvedash",
+    "extra": {
+      "eas": {
+        "projectId": "e934b098-16f8-4e65-8581-7c9cf77d5816"
+      }
+    }
   }
 }
