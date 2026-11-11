@@ -1352,7 +1352,7 @@
           refreshRidersTable();
           return;
         }
-        case 'approve-rider': case 'reject-rider': case 'grant-access': riderAction(action, el); return;
+        case 'approve-rider': case 'reject-rider': case 'grant-access': case 'end-trial': riderAction(action, el); return;
         case 'doc-approve': case 'doc-reject': reviewDoc(action, el); return;
         case 'view-image': if (el.querySelector('img')) viewImage(el.getAttribute('data-doc')); return;
         case 'open-file': openFile(el.getAttribute('data-doc')); return;
