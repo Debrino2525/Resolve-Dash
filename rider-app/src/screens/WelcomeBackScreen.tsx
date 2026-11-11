@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, TouchableOpacity, V
 import { RememberedUser } from '../auth/rememberedUser';
 import { Alert, LegalNote, PhoneField, PillButton } from '../components/auth/AuthParts';
 import { WelcomeCollage } from '../components/auth/WelcomeCollage';
-import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
+import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/authTheme';
 import { formatGhanaLocal, toGhanaE164 } from '../utils/phone';
 
 export interface WelcomeBackScreenProps {

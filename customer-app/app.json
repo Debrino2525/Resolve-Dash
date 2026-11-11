@@ -19,7 +19,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#00C853"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0D121A"
       },
       "package": "com.ghanadash.app",
       "permissions": [
@@ -50,7 +51,17 @@
           "cameraPermission": "GhanaDash uses the camera so you can photograph your package or the pickup spot for the rider.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#0D121A"
+        }
       ]
-    ]
+    ],
+    "icon": "./assets/images/icon.png"
   }
 }

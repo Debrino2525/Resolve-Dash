@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { InlineNotice } from '../components/InlineNotice';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   RefreshControl,
   ScrollView,
@@ -27,6 +28,18 @@ export interface PendingVerificationScreenProps {
   onRefreshStatus: () => Promise<void>;
   onSignOut: () => Promise<void>;
   loading: boolean;
+}
+
+/** Leave the application for now: everything uploaded is kept for when they sign back in. */
+export function confirmFinishLater(onSignOut: () => Promise<void>): void {
+  Alert.alert(
+    'Finish later?',
+    "Your details and any documents you've uploaded are saved. Sign in again with the same number to carry on.",
+    [
+      { text: 'Stay', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => void onSignOut() },
+    ],
+  );
 }
 
 const STATUS_UI: Record<
@@ -192,8 +205,11 @@ export function PendingVerificationScreen({
           loading={loading || refreshing}
           style={styles.refresh}
         />
+        <TouchableOpacity onPress={() => confirmFinishLater(onSignOut)} accessibilityRole="button" style={styles.helpLink}>
+          <Text style={styles.helpText}>Finish later · Sign out</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => setAccountOpen(true)} accessibilityRole="button" style={styles.helpLink}>
-          <Text style={styles.helpText}>Need help? Contact support · Sign out</Text>
+          <Text style={styles.helpText}>Need help? Contact support</Text>
         </TouchableOpacity>
       </ScrollView>
 

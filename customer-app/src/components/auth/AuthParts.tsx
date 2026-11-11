@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Linking,
   Platform,
   Pressable,
@@ -24,12 +25,16 @@ import { Colors, Radii, Spacing, Typography } from '../../theme/theme';
 export const TERMS_URL = SUPPORT.termsUrl;
 export const PRIVACY_URL = SUPPORT.privacyUrl;
 
-/** GhanaDash mark: green tile with a parcel. Replace with the logo image when it is ready. */
+const LOGO = require('../../../assets/images/logo.png') as number;
+
+/** The GhanaDash logo tile (assets/images/logo.png). */
 export function BrandMark({ size = 32 }: { size?: number }): React.JSX.Element {
   return (
-    <View style={[styles.mark, { width: size, height: size, borderRadius: size * 0.28 }]}>
-      <Ionicons name="cube" size={size * 0.56} color={Colors.dispatchGreen} />
-    </View>
+    <Image
+      source={LOGO}
+      style={{ width: size, height: size, borderRadius: size * 0.22 }}
+      accessibilityLabel="GhanaDash"
+    />
   );
 }
 
@@ -287,7 +292,6 @@ export function CodeBoxes({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  mark: { backgroundColor: '#0B3D22', alignItems: 'center', justifyContent: 'center' },
   pill: {
     minHeight: 54,
     borderRadius: Radii.pill,

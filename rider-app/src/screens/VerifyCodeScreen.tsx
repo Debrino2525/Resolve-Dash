@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BrandMark, CodeBoxes, PillButton } from '../components/auth/AuthParts';
-import { InlineNotice } from '../components/InlineNotice';
-import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
+import { InlineNotice } from '../components/auth/AuthNotice';
+import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/authTheme';
 import { formatGhanaLocal } from '../utils/phone';
 
 const RESEND_AFTER_S = 30;

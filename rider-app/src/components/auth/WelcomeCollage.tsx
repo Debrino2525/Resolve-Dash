@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, ImageSourcePropType, StyleSheet, Text, View } from 'react-native';
-import { Colors, Elevation, Radii, Typography } from '../../theme/theme';
+import { Colors, Elevation, Radii, Typography } from '../../theme/authTheme';
 import { BrandMark } from './AuthParts';
 
 /**
@@ -20,12 +20,12 @@ interface Slot {
 }
 
 const SLOTS: Slot[] = [
-  { name: 'Motorbike', icon: 'bicycle', tint: '#1E3A2B', style: { left: -28, top: -28, size: 160, round: true } },
-  { name: 'Parcel', icon: 'cube', tint: '#1E2A40', style: { left: 226, top: -22, size: 110, rotate: '-6deg' } },
-  { name: 'Map pin', icon: 'navigate', tint: '#2B2440', style: { left: 265, top: -15, size: 170, round: true } },
-  { name: 'Earnings', icon: 'cash', tint: '#3A321A', style: { left: -28, top: 96, size: 208, round: true } },
-  { name: 'Delivery bag', icon: 'bag-handle', tint: '#1A3436', style: { left: 73, top: 150, size: 150, round: true } },
-  { name: 'Helmet', icon: 'shield-checkmark', tint: '#2A1E1E', style: { left: 281, top: 120, size: 120, rotate: '8deg' } },
+  { name: 'Motorbike', icon: 'bicycle', tint: '#D9EFE1', style: { left: -28, top: -28, size: 160, round: true } },
+  { name: 'Parcel', icon: 'cube', tint: '#DCE7F7', style: { left: 226, top: -22, size: 110, rotate: '-6deg' } },
+  { name: 'Map pin', icon: 'navigate', tint: '#E6DDF7', style: { left: 265, top: -15, size: 170, round: true } },
+  { name: 'Earnings', icon: 'cash', tint: '#FBE3B0', style: { left: -28, top: 96, size: 208, round: true } },
+  { name: 'Delivery bag', icon: 'bag-handle', tint: '#D5EEF0', style: { left: 73, top: 150, size: 150, round: true } },
+  { name: 'Helmet', icon: 'shield-checkmark', tint: '#F4D6CF', style: { left: 281, top: 120, size: 120, rotate: '8deg' } },
 ];
 
 export function WelcomeCollage(): React.JSX.Element {
@@ -45,7 +45,7 @@ export function WelcomeCollage(): React.JSX.Element {
           <Image key={s.name} source={s.photo} style={[styles.tile, shape]} resizeMode="cover" />
         ) : (
           <View key={s.name} style={[styles.tile, shape, { backgroundColor: s.tint }]}>
-            <Ionicons name={s.icon} size={size * 0.32} color="rgba(245,247,250,0.45)" />
+            <Ionicons name={s.icon} size={size * 0.32} color="rgba(7,9,13,0.35)" />
           </View>
         );
       })}
@@ -54,7 +54,7 @@ export function WelcomeCollage(): React.JSX.Element {
 
       <View style={styles.logoCard}>
         <View style={styles.logoRow}>
-          <BrandMark size={44} />
+          <BrandMark size={52} />
           <Text style={styles.wordmark}>
             GHANA<Text style={styles.wordmarkGreen}>DASH</Text>
           </Text>
@@ -76,9 +76,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: Radii.lg,
-    backgroundColor: 'rgba(17,21,29,0.94)',
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    backgroundColor: 'rgba(255,255,255,0.94)',
     alignItems: 'center',
     ...Elevation.floating,
   },

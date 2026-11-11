@@ -19,8 +19,8 @@ import {
   SegmentedTabs,
   SocialButton,
 } from '../components/auth/AuthParts';
-import { InlineNotice } from '../components/InlineNotice';
-import { Colors, Radii, Spacing, Typography } from '../theme/theme';
+import { InlineNotice } from '../components/auth/AuthNotice';
+import { Colors, Radii, Spacing, Typography } from '../theme/authTheme';
 import { toGhanaE164 } from '../utils/phone';
 
 export type EmailMode = 'sign_in' | 'sign_up';

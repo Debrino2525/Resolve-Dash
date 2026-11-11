@@ -1,6 +1,8 @@
 import { InlineNotice } from '../components/InlineNotice';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
@@ -109,6 +111,14 @@ export function CompleteProfileScreen({
       behavior="padding"
       style={styles.container}
     >
+      <TouchableOpacity
+        onPress={() => confirmLeaveProfile(onSignOut)}
+        style={styles.back}
+        accessibilityRole="button"
+        accessibilityLabel="Back to sign in"
+      >
+        <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+      </TouchableOpacity>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <StatusTelemetryPill
           statusText={
@@ -242,7 +252,20 @@ export function CompleteProfileScreen({
   );
 }
 
+/** "Stop setting up?": signs out, which returns to the sign-in screen. Also used by Android back. */
+export function confirmLeaveProfile(onSignOut: () => Promise<void>): void {
+  Alert.alert(
+    'Stop setting up?',
+    'You will go back to the sign-in screen. You can sign in again any time to finish your rider profile.',
+    [
+      { text: 'Keep going', style: 'cancel' },
+      { text: 'Go back', style: 'destructive', onPress: () => void onSignOut() },
+    ],
+  );
+}
+
 const styles = StyleSheet.create({
+  back: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', marginLeft: 8, marginTop: 4 },
   container: {
     flex: 1,
     backgroundColor: Colors.background,

@@ -18,7 +18,7 @@ import { Tab, TabBar } from './src/components/TabBar';
 import { TactileButton } from './src/components/TactileButton';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { AuthBusy, AuthScreen, AuthTab, EmailMode, SignUpDetails } from './src/screens/AuthScreen';
-import { CompleteProfileScreen } from './src/screens/CompleteProfileScreen';
+import { CompleteProfileScreen, confirmLeaveProfile } from './src/screens/CompleteProfileScreen';
 import { ConfirmScreen } from './src/screens/ConfirmScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { NewDeliveryScreen } from './src/screens/NewDeliveryScreen';
@@ -159,6 +159,24 @@ export default function App(): React.JSX.Element {
   // Android back button walks back through pages.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Sign-in: step back from the code screen, and from the form to Welcome back.
+      if (phase === 'signed_out') {
+        if (authView.name === 'code') {
+          setErrorMessage(null);
+          setAuthView(authView.from === 'welcome' && remembered ? { name: 'welcome' } : { name: 'form', tab: authView.tab });
+          return true;
+        }
+        if (authView.name === 'form' && remembered) {
+          setErrorMessage(null);
+          setAuthView({ name: 'welcome' });
+          return true;
+        }
+        return false;
+      }
+      if (phase === 'needs_profile') {
+        confirmLeaveProfile(() => signOut());
+        return true;
+      }
       if (page.name === 'confirm') {
         setPage({ name: 'new', initial: page.draft });
         return true;
@@ -174,7 +192,7 @@ export default function App(): React.JSX.Element {
       return false;
     });
     return () => sub.remove();
-  }, [page, tab]);
+  }, [page, tab, phase, authView, remembered]);
 
   const upsertOrder = useCallback((o: CustomerOrder): void => {
     setOrders((list) => [o, ...list.filter((x) => x.id !== o.id)].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)));

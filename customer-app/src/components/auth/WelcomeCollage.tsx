@@ -54,7 +54,7 @@ export function WelcomeCollage(): React.JSX.Element {
 
       <View style={styles.logoCard}>
         <View style={styles.logoRow}>
-          <BrandMark size={44} />
+          <BrandMark size={52} />
           <Text style={styles.wordmark}>
             GHANA<Text style={styles.wordmarkGreen}>DASH</Text>
           </Text>

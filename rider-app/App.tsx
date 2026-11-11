@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
   ApiError,
@@ -22,12 +22,13 @@ import {
 import { TactileButton } from './src/components/TactileButton';
 import { AccountRejectedScreen } from './src/screens/AccountRejectedScreen';
 import { AuthBusy, AuthScreen, AuthTab, EmailMode, SignUpDetails } from './src/screens/AuthScreen';
-import { CompleteProfileScreen } from './src/screens/CompleteProfileScreen';
+import { CompleteProfileScreen, confirmLeaveProfile } from './src/screens/CompleteProfileScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
-import { PendingVerificationScreen } from './src/screens/PendingVerificationScreen';
+import { confirmFinishLater, PendingVerificationScreen } from './src/screens/PendingVerificationScreen';
 import { VerifyCodeScreen } from './src/screens/VerifyCodeScreen';
 import { WelcomeBackScreen } from './src/screens/WelcomeBackScreen';
 import { executePaystackSubscriptionPayment } from './src/services/paystackCheckout';
+import { Colors as AuthColors } from './src/theme/authTheme';
 import { Colors, Spacing, Typography } from './src/theme/theme';
 import { RiderProfile, SubscriptionDetails } from './src/types/subscription';
 
@@ -178,6 +179,35 @@ export default function App(): React.JSX.Element {
       setAuthBusy(null);
     }
   }
+
+  // Android back: step back through sign-in and onboarding instead of closing the app.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (phase === 'signed_out') {
+        if (authView.name === 'code') {
+          setErrorMessage(null);
+          setAuthView(authView.from === 'welcome' && remembered ? { name: 'welcome' } : { name: 'form', tab: authView.tab });
+          return true;
+        }
+        if (authView.name === 'form' && remembered) {
+          setErrorMessage(null);
+          setAuthView({ name: 'welcome' });
+          return true;
+        }
+        return false;
+      }
+      if (phase === 'needs_profile') {
+        confirmLeaveProfile(handleSignOut);
+        return true;
+      }
+      if (phase === 'ready' && profile?.onboardingStatus === 'PENDING_VERIFICATION') {
+        confirmFinishLater(handleSignOut);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  });
 
   async function handleGoogle(): Promise<void> {
     setAuthBusy('google');
@@ -388,13 +418,16 @@ export default function App(): React.JSX.Element {
   // the safe area.
   const edgeToEdge = phase === 'ready' && profile?.onboardingStatus === 'ACTIVE';
 
+  // The sign-in screens use the light design (same as the customer app).
+  const signedOut = phase === 'signed_out';
+
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={signedOut ? 'dark-content' : 'light-content'} />
       {edgeToEdge ? (
         <View style={styles.container}>{screen}</View>
       ) : (
-        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <SafeAreaView style={[styles.container, signedOut && { backgroundColor: AuthColors.background }]} edges={['top', 'bottom']}>
           {screen}
         </SafeAreaView>
       )}
