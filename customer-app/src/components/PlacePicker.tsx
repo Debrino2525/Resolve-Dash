@@ -10,14 +10,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Camera, LocationPuck, MapState, MapView, StyleImport } from '@rnmapbox/maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getRecentPlaces, RecentPlace } from '../api/backendClient';
 import { DEFAULT_CENTRE, getCurrentFix } from '../services/location';
 import { addressForPoint, newSearchSession, resolveSuggestion, searchPlaces, Suggestion } from '../services/placeSearch';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
 import { Place, Point } from '../types/orders';
-import { lngLat, SATELLITE_STYLE, STANDARD_STYLE, zoomForDelta } from './mapSetup';
+import { ExactSpotMap } from './ExactSpotMap';
 import { TactileButton } from './TactileButton';
 
 export interface PlacePickerProps {
@@ -40,7 +39,6 @@ function attributionFor(results: Suggestion[]): string | null {
 }
 
 /** ~250 m across: close enough to put the pin on a building or gate. */
-const EXACT_DELTA = 0.0025;
 
 /**
  * Choose a stop precisely. Search and GPS only get close: map search in Ghana mostly knows
@@ -298,26 +296,11 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
           </View>
         ) : (
           <View style={styles.flex}>
-            <MapView
-              style={StyleSheet.absoluteFill}
-              styleURL={mapType === 'satellite' ? SATELLITE_STYLE : STANDARD_STYLE}
-              onMapIdle={(state: MapState) =>
-                onRegionDone({ latitude: state.properties.center[1], longitude: state.properties.center[0] })
-              }
-              logoEnabled
-              attributionEnabled
-              scaleBarEnabled={false}
-              compassEnabled={false}
-              rotateEnabled={false}
-              pitchEnabled={false}
-            >
-              {mapType === 'standard' && (
-                // Landmarks people give directions by stay visible; transit clutter goes.
-                <StyleImport id="basemap" existing config={{ showPointOfInterestLabels: true, showTransitLabels: false }} />
-              )}
-              <Camera defaultSettings={{ centerCoordinate: lngLat(pin), zoomLevel: zoomForDelta(EXACT_DELTA) }} />
-              <LocationPuck puckBearingEnabled={false} />
-            </MapView>
+            <ExactSpotMap
+              start={pin}
+              satellite={mapType === 'satellite'}
+              onIdle={(p) => onRegionDone({ latitude: p.lat, longitude: p.lng })}
+            />
             {/* The exact point is the dot; the pin's tip sits on it. */}
             <View pointerEvents="none" style={styles.pinWrap}>
               <Ionicons name="location" size={44} color={Colors.dangerRed} style={styles.pinIcon} />
