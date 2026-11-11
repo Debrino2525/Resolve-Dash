@@ -13,7 +13,8 @@ import {
 import MapView, { MapType } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ACCRA, getCurrentFix } from '../services/location';
-import { PlaceSuggestion, reverseGeocode, searchPlaces } from '../services/mapbox';
+import { reverseGeocode } from '../services/mapbox';
+import { newSearchSession, resolveSuggestion, searchPlaces, Suggestion } from '../services/placeSearch';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
 import { Place, Point } from '../types/orders';
 import { TactileButton } from './TactileButton';
@@ -38,7 +39,9 @@ const EXACT_DELTA = 0.0025;
 export function PlacePicker({ visible, title, near, initial, onPick, onClose }: PlacePickerProps): React.JSX.Element {
   const [mode, setMode] = useState<'search' | 'map'>('search');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<PlaceSuggestion[]>([]);
+  const [results, setResults] = useState<Suggestion[]>([]);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const session = useRef(newSearchSession());
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
   const [pin, setPin] = useState<Point>(initial ?? near ?? ACCRA);
@@ -55,6 +58,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     setResults([]);
     setPin(initial ?? near ?? ACCRA);
     setPinAddress(null);
+    session.current = newSearchSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
@@ -67,7 +71,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     const id = ++reqId.current;
     setSearching(true);
     const t = setTimeout(() => {
-      void searchPlaces(query, near).then((r) => {
+      void searchPlaces(query, near, session.current).then((r) => {
         if (id !== reqId.current) return;
         setResults(r);
         setSearching(false);
@@ -82,6 +86,24 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     setPinAddress(null);
     setHint(message);
     setMode('map');
+  };
+
+  const choose = async (item: Suggestion): Promise<void> => {
+    setResolvingId(item.id);
+    try {
+      const place = await resolveSuggestion(item, session.current);
+      session.current = newSearchSession(); // a pick ends the billing session
+      openMap(
+        place,
+        item.precise
+          ? `Pin placed at ${item.title}. Check it is on the right building or entrance, and move the map if not.`
+          : `${item.title} is the general area. Move the map so the pin sits on the exact building or gate.`,
+      );
+    } catch {
+      openMap(near ?? ACCRA, `We couldn't place ${item.title}. Move the map so the pin sits on the exact spot.`);
+    } finally {
+      setResolvingId(null);
+    }
   };
 
   const useCurrent = async (): Promise<void> => {
@@ -132,7 +154,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               <Ionicons name="search" size={20} color={Colors.textMuted} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search area, street or town"
+                placeholder="Search a place, street or area"
                 placeholderTextColor={Colors.textMuted}
                 value={query}
                 onChangeText={setQuery}
@@ -183,7 +205,11 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               keyboardShouldPersistTaps="handled"
               ListHeaderComponent={
                 results.length > 0 ? (
-                  <Text style={styles.areaNote}>Search finds the area. You'll set the exact spot on the map next.</Text>
+                  <Text style={styles.areaNote}>
+                    {results[0]?.precise
+                      ? "Pick a place, then check the pin on the map."
+                      : "Search finds the area. You'll set the exact spot on the map next."}
+                  </Text>
                 ) : undefined
               }
               ListEmptyComponent={
@@ -194,12 +220,8 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.result}
-                  onPress={() =>
-                    openMap(
-                      item,
-                      `${item.title} is the general area. Move the map so the pin sits on the exact building or gate.`,
-                    )
-                  }
+                  onPress={() => void choose(item)}
+                  disabled={resolvingId !== null}
                   accessibilityRole="button"
                 >
                   <Ionicons name="location-outline" size={20} color={Colors.textMuted} />
@@ -213,7 +235,11 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
                       </Text>
                     ) : null}
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+                  {resolvingId === item.id ? (
+                    <ActivityIndicator color={Colors.dispatchGreenLight} />
+                  ) : (
+                    <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+                  )}
                 </TouchableOpacity>
               )}
             />

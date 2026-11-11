@@ -9,6 +9,7 @@ import { throttleLimit, throttleTtlMs } from './common/throttle.config';
 import { DatabaseModule } from './database/database.module';
 import { HealthController } from './health/health.controller';
 import { OrdersModule } from './orders/orders.module';
+import { PlacesModule } from './places/places.module';
 import { RidersModule } from './riders/riders.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -27,6 +28,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     AdminModule,
     CustomersModule,
     OrdersModule,
+    PlacesModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

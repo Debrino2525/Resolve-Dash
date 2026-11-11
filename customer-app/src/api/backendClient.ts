@@ -192,3 +192,30 @@ export const sendChatPhoto = (orderId: string, photo: PickedPhoto, caption?: str
 /** Before booking: upload the item photo; pass the returned path to createOrder. */
 export const uploadPackagePhoto = (photo: PickedPhoto): Promise<{ photoPath: string }> =>
   api<{ photoPath: string }>('/orders/package-photo', { method: 'POST', body: photoForm(photo) }, 60000);
+
+// ---------- Place search (Google Places via our server; key never in the app) ----------
+
+export interface ServerPlaceSuggestion {
+  placeId: string;
+  title: string;
+  subtitle: string;
+}
+
+export const placesAutocomplete = (
+  q: string,
+  session: string,
+  near: Point | null,
+): Promise<{ enabled: boolean; suggestions: ServerPlaceSuggestion[] }> => {
+  const params = new URLSearchParams({ q, session });
+  if (near) {
+    params.set('lat', near.lat.toFixed(4));
+    params.set('lng', near.lng.toFixed(4));
+  }
+  return api(`/places/autocomplete?${params.toString()}`);
+};
+
+export const placeDetails = (
+  id: string,
+  session: string,
+): Promise<{ placeId: string; name: string; address: string; lat: number; lng: number }> =>
+  api(`/places/details?${new URLSearchParams({ id, session }).toString()}`);
