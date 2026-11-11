@@ -10,6 +10,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthController } from './health/health.controller';
 import { OrdersModule } from './orders/orders.module';
 import { PlacesModule } from './places/places.module';
+import { AuthHooksModule } from './auth-hooks/auth-hooks.module';
 import { RidersModule } from './riders/riders.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -29,6 +30,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     CustomersModule,
     OrdersModule,
     PlacesModule,
+    AuthHooksModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
