@@ -1,3 +1,4 @@
+import type { CallState } from '../components/CallScreen';
 export type PackageType = 'DOCUMENT' | 'SMALL_PARCEL' | 'FOOD' | 'LARGE_ITEM';
 export type OrderStatus = 'SEARCHING' | 'ASSIGNED' | 'PICKED_UP' | 'DELIVERED' | 'CANCELLED' | 'NO_RIDER';
 
@@ -45,6 +46,8 @@ export interface RiderJob {
   pickedUpAt: string | null;
   hasPackagePhoto: boolean;
   messageCount: number;
+  /** Current in-app call with the customer (ringing, active or just ended), if any. */
+  call: CallState | null;
 }
 
 export interface DispatchState {

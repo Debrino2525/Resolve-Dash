@@ -1,5 +1,6 @@
 import { File } from 'expo-file-system';
 import { getValidAccessToken } from '../auth/supabase';
+import type { CallState } from '../components/CallScreen';
 import { PickedPhoto } from '../services/photos';
 import { DispatchState } from '../types/dispatch';
 import { DocumentChecklist, PickedFile, RiderDocumentType } from '../types/documents';
@@ -236,6 +237,23 @@ export async function declineOffer(offerId: string): Promise<DispatchState> {
 export async function markPickedUp(jobId: string): Promise<DispatchState> {
   return authenticatedFetch<DispatchState>(`/riders/me/jobs/${jobId}/picked-up`, { method: 'POST' });
 }
+
+// ---------- In-app calls with the customer ----------
+
+export interface CallJoinResponse {
+  call: CallState;
+  appId: string;
+  channel: string;
+  token: string;
+  uid: number;
+}
+
+export const startCall = (orderId: string): Promise<CallJoinResponse> =>
+  authenticatedFetch<CallJoinResponse>(`/orders/${orderId}/call`, { method: 'POST', body: '{}' }, 12000);
+export const answerCall = (orderId: string): Promise<CallJoinResponse> =>
+  authenticatedFetch<CallJoinResponse>(`/orders/${orderId}/call/answer`, { method: 'POST', body: '{}' }, 12000);
+export const endCall = (orderId: string): Promise<unknown> =>
+  authenticatedFetch<unknown>(`/orders/${orderId}/call/end`, { method: 'POST', body: '{}' });
 
 /** Completes the delivery with the 4-digit PIN the customer/receiver gives the rider. */
 export async function markDelivered(jobId: string, pin: string): Promise<DispatchState> {

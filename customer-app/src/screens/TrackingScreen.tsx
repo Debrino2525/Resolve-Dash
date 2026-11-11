@@ -40,6 +40,8 @@ export interface TrackingScreenProps {
   onRebook: (draft: DeliveryDraft) => void;
   /** Lets the parent refresh its active-order list when status changes. */
   onChanged?: (order: CustomerOrder) => void;
+  /** In-app call to the rider (handled by App, which shows the call screen). */
+  onCallRider?: (order: CustomerOrder) => void;
 }
 
 const POLL_MS = 4000;
@@ -48,7 +50,14 @@ const POLL_MS = 4000;
  * Live delivery: finding a rider → rider on the way (live position, call/WhatsApp, PIN) →
  * delivered (rating). Also the detail view for past orders.
  */
-export function TrackingScreen({ orderId, initial, onClose, onRebook, onChanged }: TrackingScreenProps): React.JSX.Element {
+export function TrackingScreen({
+  orderId,
+  initial,
+  onClose,
+  onRebook,
+  onChanged,
+  onCallRider,
+}: TrackingScreenProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const [order, setOrder] = useState<CustomerOrder | null>(initial ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +169,7 @@ export function TrackingScreen({ orderId, initial, onClose, onRebook, onChanged 
               order={order}
               unread={Math.max(0, order.messageCount - (seen ?? order.messageCount))}
               onChat={() => setChatOpen(true)}
+              onCall={onCallRider ? () => onCallRider(order) : undefined}
             />
             <PinCard order={order} />
           </>
@@ -261,10 +271,13 @@ function RiderCard({
   order,
   unread,
   onChat,
+  onCall,
 }: {
   order: CustomerOrder;
   unread: number;
   onChat: () => void;
+  /** In-app call; without it the button dials the rider's number. */
+  onCall?: () => void;
 }): React.JSX.Element {
   const r = order.rider!;
   const wa = r.phoneNumber.replace(/^\+/, '');
@@ -283,7 +296,7 @@ function RiderCard({
         </View>
         <TouchableOpacity
           style={[styles.round, { backgroundColor: Colors.dispatchGreen }]}
-          onPress={() => void Linking.openURL(`tel:${r.phoneNumber}`)}
+          onPress={onCall ?? (() => void Linking.openURL(`tel:${r.phoneNumber}`))}
           accessibilityRole="button"
           accessibilityLabel={`Call ${r.fullName}`}
         >

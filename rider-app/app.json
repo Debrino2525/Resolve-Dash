@@ -9,7 +9,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ghanadash.rider",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "GhanaDash uses the microphone only during in-app calls between a customer and their rider."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +24,10 @@
         "CAMERA",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "VIBRATE"
+        "VIBRATE",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH_CONNECT"
       ],
       "blockedPermissions": [
         "ACCESS_BACKGROUND_LOCATION"
@@ -52,7 +58,12 @@
       ],
       "expo-secure-store",
       "expo-apple-authentication",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "GhanaDash uses the microphone only during in-app calls between a customer and their rider."
+        }
+      ],
       [
         "expo-splash-screen",
         {

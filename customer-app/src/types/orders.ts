@@ -1,3 +1,4 @@
+import type { CallState } from '../components/CallScreen';
 import type { PickedPhoto } from '../services/photos';
 
 export type OrderStatus = 'SEARCHING' | 'ASSIGNED' | 'PICKED_UP' | 'DELIVERED' | 'CANCELLED' | 'NO_RIDER';
@@ -80,6 +81,8 @@ export interface CustomerOrder {
   rider: AssignedRider | null;
   hasPackagePhoto: boolean;
   messageCount: number;
+  /** Current in-app call with the rider (ringing, active or just ended), if any. */
+  call: CallState | null;
 }
 
 export interface Quote {

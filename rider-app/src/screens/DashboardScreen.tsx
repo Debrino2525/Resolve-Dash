@@ -4,6 +4,8 @@ import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountSheet } from '../components/AccountSheet';
 import { AuthImage } from '../components/AuthImage';
+import { answerCall, endCall, startCall } from '../api/backendClient';
+import { CallScreen } from '../components/CallScreen';
 import { ChatSheet } from '../components/ChatSheet';
 import { DailyEarningsCard } from '../components/DailyEarningsCard';
 import { DispatchMap } from '../components/DispatchMap';
@@ -61,6 +63,9 @@ export function DashboardScreen({
   const [muted, setMuted] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  /** In-app call with the customer: placed from the job card, or ringing in from the customer. */
+  const [callUi, setCallUi] = useState<'outgoing' | 'incoming' | null>(null);
+  const dismissedCalls = useRef(new Set<string>());
   // Messages seen per job; newer ones show as a badge on the Chat button.
   const [seen, setSeen] = useState<{ jobId: string; count: number } | null>(null);
   const [goingOnline, setGoingOnline] = useState(false);
@@ -169,6 +174,13 @@ export function DashboardScreen({
       Alert.alert('Could not open maps', 'Install Google Maps or try again.'),
     );
   };
+
+  useEffect(() => {
+    const c = job?.call;
+    if (callUi || !c || c.status !== 'RINGING' || !c.incoming || dismissedCalls.current.has(c.id)) return;
+    dismissedCalls.current.add(c.id);
+    setCallUi('incoming');
+  }, [job?.call, callUi]);
 
   const call = (phone: string): void => {
     void Linking.openURL(`tel:${phone}`);
@@ -311,6 +323,16 @@ export function DashboardScreen({
           <AuthImage path={`/orders/${job.id}/package-photo`} style={styles.packagePhoto} />
         )}
         {job.notes ? <Text style={styles.notes}>“{job.notes}”</Text> : null}
+        <TouchableOpacity
+          style={styles.chatBtn}
+          onPress={() => setCallUi('outgoing')}
+          accessibilityRole="button"
+          accessibilityLabel={`Call ${job.customerName} in the app`}
+        >
+          <Ionicons name="call-outline" size={20} color={Colors.dispatchGreenLight} />
+          <Text style={styles.chatText}>Call {job.customerName.split(' ')[0]} in app</Text>
+          <Text style={styles.small}>free</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.chatBtn}
           onPress={() => setChatOpen(true)}
@@ -504,13 +526,30 @@ export function DashboardScreen({
       )}
 
       {job && (
-        <ChatSheet
-          visible={chatOpen}
-          orderId={job.id}
-          otherName={job.customerName.split(' ')[0] ?? 'Customer'}
-          onClose={() => setChatOpen(false)}
-          onSeen={(count) => setSeen({ jobId: job.id, count })}
-        />
+        <>
+          {callUi && (
+            <CallScreen
+              visible
+              mode={callUi}
+              otherName={job.customerName}
+              otherLabel="Customer"
+              polled={job.call}
+              api={{
+                start: () => startCall(job.id),
+                answer: () => answerCall(job.id),
+                end: () => endCall(job.id),
+              }}
+              onClose={() => setCallUi(null)}
+            />
+          )}
+          <ChatSheet
+            visible={chatOpen}
+            orderId={job.id}
+            otherName={job.customerName.split(' ')[0] ?? 'Customer'}
+            onClose={() => setChatOpen(false)}
+            onSeen={(count) => setSeen({ jobId: job.id, count })}
+          />
+        </>
       )}
 
       <PinEntrySheet

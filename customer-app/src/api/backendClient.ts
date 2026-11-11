@@ -1,5 +1,6 @@
 import { File } from 'expo-file-system';
 import { getValidAccessToken } from '../auth/supabase';
+import type { CallState } from '../components/CallScreen';
 import { PickedPhoto } from '../services/photos';
 import { CustomerOrder, CustomerProfile, DeliveryDraft, Point, Quote } from '../types/orders';
 
@@ -218,6 +219,23 @@ export const sendChatPhoto = (orderId: string, photo: PickedPhoto, caption?: str
 /** Before booking: upload the item photo; pass the returned path to createOrder. */
 export const uploadPackagePhoto = (photo: PickedPhoto): Promise<{ photoPath: string }> =>
   api<{ photoPath: string }>('/orders/package-photo', { method: 'POST', body: photoForm(photo) }, 60000);
+
+// ---------- In-app calls with the rider ----------
+
+export interface CallJoinResponse {
+  call: CallState;
+  appId: string;
+  channel: string;
+  token: string;
+  uid: number;
+}
+
+export const startCall = (orderId: string): Promise<CallJoinResponse> =>
+  api(`/orders/${orderId}/call`, { method: 'POST', body: '{}' }, 12000);
+export const answerCall = (orderId: string): Promise<CallJoinResponse> =>
+  api(`/orders/${orderId}/call/answer`, { method: 'POST', body: '{}' }, 12000);
+export const endCall = (orderId: string): Promise<unknown> =>
+  api(`/orders/${orderId}/call/end`, { method: 'POST', body: '{}' });
 
 // ---------- Place search (Google Places via our server; key never in the app) ----------
 

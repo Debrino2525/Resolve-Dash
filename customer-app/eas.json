@@ -14,17 +14,25 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://ghanadash-api.globitechcybersolutions.com"
-      }
+        "EXPO_PUBLIC_AGORA_APP_ID": "c64f6ae3b0aa4d5d8c2275e72aa7e3a0",
+        "EXPO_PUBLIC_API_URL": "https://ghanadash-api.globitechcybersolutions.com",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ZftSxRCAk9eIXh9JLad5lg_cwRWuwdP",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tllhlkpeepkopzxvxhvc.supabase.co"
+      },
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://ghanadash-api.globitechcybersolutions.com"
+        "EXPO_PUBLIC_AGORA_APP_ID": "c64f6ae3b0aa4d5d8c2275e72aa7e3a0",
+        "EXPO_PUBLIC_API_URL": "https://ghanadash-api.globitechcybersolutions.com",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ZftSxRCAk9eIXh9JLad5lg_cwRWuwdP",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tllhlkpeepkopzxvxhvc.supabase.co"
       },
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "environment": "production"
     }
   },
   "submit": {

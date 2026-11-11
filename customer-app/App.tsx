@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { ApiError, getCustomerProfile, listOrders, onboardCustomer } from './src/api/backendClient';
+import {
+  answerCall,
+  ApiError,
+  endCall,
+  getCustomerProfile,
+  listOrders,
+  onboardCustomer,
+  startCall,
+} from './src/api/backendClient';
 import { forgetRememberedUser, getRememberedUser, RememberedUser, rememberUser } from './src/auth/rememberedUser';
 import {
   AuthCancelledError,
@@ -14,6 +22,7 @@ import {
   supabase,
   verifyPhoneSignInCode,
 } from './src/auth/supabase';
+import { CallScreen } from './src/components/CallScreen';
 import { Tab, TabBar } from './src/components/TabBar';
 import { TactileButton } from './src/components/TactileButton';
 import { AccountScreen } from './src/screens/AccountScreen';
@@ -62,6 +71,9 @@ export default function App(): React.JSX.Element {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  /** The call on screen (one at a time); incoming calls open it from the polled orders. */
+  const [callUi, setCallUi] = useState<{ orderId: string; mode: 'outgoing' | 'incoming' } | null>(null);
+  const dismissedCalls = useRef(new Set<string>());
 
   const loadProfile = useCallback(async (): Promise<void> => {
     setPhase('loading');
@@ -152,7 +164,8 @@ export default function App(): React.JSX.Element {
   // Keep the Home "On the way" list fresh while something is in progress.
   useEffect(() => {
     if (phase !== 'ready' || activeOrders.length === 0 || page.name !== 'tabs') return;
-    const t = setInterval(() => void refreshOrders(), 15_000);
+    // 5 s so a call from the rider rings promptly on any screen.
+    const t = setInterval(() => void refreshOrders(), 5_000);
     return () => clearInterval(t);
   }, [phase, activeOrders.length, page.name, refreshOrders]);
 
@@ -193,6 +206,16 @@ export default function App(): React.JSX.Element {
     });
     return () => sub.remove();
   }, [page, tab, phase, authView, remembered]);
+
+  // A rider calling: ring on whatever screen the customer is on.
+  useEffect(() => {
+    if (callUi) return;
+    const ringing = orders.find((o) => o.call?.status === 'RINGING' && o.call.incoming && !dismissedCalls.current.has(o.call.id));
+    if (ringing?.call) {
+      dismissedCalls.current.add(ringing.call.id);
+      setCallUi({ orderId: ringing.id, mode: 'incoming' });
+    }
+  }, [orders, callUi]);
 
   const upsertOrder = useCallback((o: CustomerOrder): void => {
     setOrders((list) => [o, ...list.filter((x) => x.id !== o.id)].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)));
@@ -410,6 +433,7 @@ export default function App(): React.JSX.Element {
         onClose={() => setPage({ name: 'tabs' })}
         onRebook={(draft) => setPage({ name: 'new', initial: draft })}
         onChanged={upsertOrder}
+        onCallRider={(o) => setCallUi({ orderId: o.id, mode: 'outgoing' })}
       />
     );
   } else {
@@ -456,8 +480,31 @@ export default function App(): React.JSX.Element {
 
   const inTabs = phase === 'ready' && profile && page.name === 'tabs';
 
+  const callOrder = callUi ? orders.find((o) => o.id === callUi.orderId) ?? null : null;
+
   return (
     <SafeAreaProvider>
+      {callUi && (
+        <CallScreen
+          visible
+          mode={callUi.mode}
+          otherName={callOrder?.rider?.fullName ?? 'Your rider'}
+          otherLabel="Your rider"
+          polled={callOrder?.call ?? null}
+          api={{
+            start: () => startCall(callUi.orderId),
+            answer: () => answerCall(callUi.orderId),
+            end: () => endCall(callUi.orderId),
+          }}
+          onPhoneCall={
+            callOrder?.rider ? () => void Linking.openURL(`tel:${callOrder.rider!.phoneNumber}`) : undefined
+          }
+          onClose={() => {
+            setCallUi(null);
+            void refreshOrders();
+          }}
+        />
+      )}
       <StatusBar barStyle="dark-content" />
       {edgeToEdge || inTabs ? (
         <View style={styles.container}>{screen}</View>
