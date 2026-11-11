@@ -1,4 +1,6 @@
+import { File } from 'expo-file-system';
 import { getValidAccessToken } from '../auth/supabase';
+import { PickedPhoto } from '../services/photos';
 import { CustomerOrder, CustomerProfile, DeliveryDraft, Point, Quote } from '../types/orders';
 
 /**
@@ -32,7 +34,8 @@ async function api<T>(path: string, options: RequestInit = {}, timeoutMs = 8000)
       ...options,
       signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
+        // FormData uploads: the runtime sets multipart/form-data with its boundary.
+        ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         Authorization: `Bearer ${token}`,
         ...(options.headers ?? {}),
       },
@@ -102,8 +105,19 @@ export const getQuote = (pickup: Point, dropoff: Point): Promise<Quote> =>
     12000,
   );
 
-export const createOrder = (draft: DeliveryDraft, quoteToken: string): Promise<CustomerOrder> =>
-  api('/orders', { method: 'POST', body: JSON.stringify({ ...draft, quoteToken }) }, 12000);
+export const createOrder = (
+  draft: DeliveryDraft,
+  quoteToken: string,
+  packagePhotoPath: string | null = null,
+): Promise<CustomerOrder> => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { packagePhoto, ...fields } = draft;
+  return api(
+    '/orders',
+    { method: 'POST', body: JSON.stringify({ ...fields, quoteToken, packagePhotoPath }) },
+    12000,
+  );
+};
 
 export const listOrders = (): Promise<CustomerOrder[]> => api('/orders');
 
@@ -125,3 +139,56 @@ export const rateOrder = (
 
 export const nearbyRiders = (p: Point): Promise<{ count: number; riders: Point[] }> =>
   api(`/orders/nearby-riders?lat=${p.lat.toFixed(5)}&lng=${p.lng.toFixed(5)}`);
+
+// ---------- Photos and chat (package photo, customer ↔ rider messages) ----------
+
+/** Full URL for an API path (used by AuthImage, which adds the sign-in header). */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderRole: 'CUSTOMER' | 'RIDER';
+  mine: boolean;
+  body: string | null;
+  hasPhoto: boolean;
+  createdAt: string;
+}
+
+export interface ChatThread {
+  orderId: string;
+  myRole: 'CUSTOMER' | 'RIDER';
+  open: boolean;
+  messages: ChatMessage[];
+}
+
+/** multipart form with the photo as `file` (Expo fetch needs name/type/bytes parts). */
+function photoForm(photo: PickedPhoto, fields: Record<string, string> = {}): FormData {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  const local = new File(photo.uri);
+  form.append('file', {
+    name: photo.name,
+    type: photo.type,
+    bytes: () => local.bytes(),
+  } as unknown as Blob);
+  return form;
+}
+
+export const getChatThread = (orderId: string): Promise<ChatThread> =>
+  api<ChatThread>(`/orders/${orderId}/messages`, { method: 'GET' });
+
+export const sendChatMessage = (orderId: string, body: string): Promise<ChatThread> =>
+  api<ChatThread>(`/orders/${orderId}/messages`, { method: 'POST', body: JSON.stringify({ body }) });
+
+export const sendChatPhoto = (orderId: string, photo: PickedPhoto, caption?: string): Promise<ChatThread> =>
+  api<ChatThread>(
+    `/orders/${orderId}/messages/photo`,
+    { method: 'POST', body: photoForm(photo, caption ? { caption } : {}) },
+    60000,
+  );
+
+/** Before booking: upload the item photo; pass the returned path to createOrder. */
+export const uploadPackagePhoto = (photo: PickedPhoto): Promise<{ photoPath: string }> =>
+  api<{ photoPath: string }>('/orders/package-photo', { method: 'POST', body: photoForm(photo) }, 60000);

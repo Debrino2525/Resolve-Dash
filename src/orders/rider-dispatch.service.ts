@@ -50,6 +50,7 @@ interface OfferRow {
   distance_m: number;
   duration_s: number;
   fare_pesewas: number;
+  has_package_photo: boolean;
 }
 
 /** Rider side of dispatch: going online, offers, and moving a job through to delivery. */
@@ -255,7 +256,8 @@ export class RiderDispatchService {
       `SELECT f.id, f.order_id, f.expires_at, f.distance_to_pickup_m,
               o.pickup_lat, o.pickup_lng, o.pickup_address, o.pickup_landmark,
               o.dropoff_lat, o.dropoff_lng, o.dropoff_address, o.dropoff_landmark,
-              o.package_type, o.fragile, o.distance_m, o.duration_s, o.fare_pesewas
+              o.package_type, o.fragile, o.distance_m, o.duration_s, o.fare_pesewas,
+              (o.package_photo_path IS NOT NULL) AS has_package_photo
        FROM order_offers f JOIN delivery_orders o ON o.id = f.order_id
        WHERE f.rider_id = $1 AND f.status = 'OFFERED' AND f.expires_at > NOW() AND o.status = 'SEARCHING'
        LIMIT 1`,
@@ -286,6 +288,7 @@ export class RiderDispatchService {
       durationSeconds: r.duration_s,
       farePesewas: r.fare_pesewas,
       paymentMethod: 'CASH',
+      hasPackagePhoto: Boolean(r.has_package_photo),
     };
   }
 
@@ -306,6 +309,8 @@ export class RiderDispatchService {
       customerName: await this.orders.customerName(o.customerId),
       assignedAt: o.assignedAt,
       pickedUpAt: o.pickedUpAt,
+      hasPackagePhoto: Boolean(o.packagePhotoPath),
+      messageCount: await this.orders.messageCount(o.id),
     };
   }
 }

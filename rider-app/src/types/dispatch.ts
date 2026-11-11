@@ -24,6 +24,7 @@ export interface RiderOffer {
   durationSeconds: number;
   farePesewas: number;
   paymentMethod: 'CASH';
+  hasPackagePhoto: boolean;
 }
 
 export interface RiderJob {
@@ -42,6 +43,8 @@ export interface RiderJob {
   customerName: string;
   assignedAt: string | null;
   pickedUpAt: string | null;
+  hasPackagePhoto: boolean;
+  messageCount: number;
 }
 
 export interface DispatchState {

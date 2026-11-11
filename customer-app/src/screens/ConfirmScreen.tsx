@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ApiError, createOrder, getQuote } from '../api/backendClient';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ApiError, createOrder, getQuote, uploadPackagePhoto } from '../api/backendClient';
 import { DeliveryMap } from '../components/DeliveryMap';
 import { InlineNotice } from '../components/InlineNotice';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -23,6 +23,8 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
   const [quote, setQuote] = useState(initialQuote);
   const [route, setRoute] = useState<{ latitude: number; longitude: number }[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // Uploaded once, reused if booking is retried (e.g. after a price refresh).
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,7 +46,12 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
           return;
         }
       }
-      onBooked(await createOrder(draft, q.quoteToken));
+      let path = photoPath;
+      if (draft.packagePhoto && !path) {
+        path = (await uploadPackagePhoto(draft.packagePhoto)).photoPath;
+        setPhotoPath(path);
+      }
+      onBooked(await createOrder(draft, q.quoteToken, path));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not book the delivery';
       if (err instanceof ApiError && /quote/i.test(msg)) {
@@ -75,6 +82,9 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
             <Meta icon="time-outline" text={`~${formatDuration(quote.durationSeconds)} ride`} />
             <Meta icon="cube-outline" text={`${PACKAGE_LABEL[draft.packageType]}${draft.fragile ? ' · fragile' : ''}`} />
           </View>
+          {draft.packagePhoto && (
+            <Image source={{ uri: draft.packagePhoto.uri }} style={styles.packagePhoto} accessibilityLabel="Photo of the item" />
+          )}
         </View>
 
         <View style={styles.card}>
@@ -157,6 +167,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   flex: { flex: 1 },
   content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.huge },
+  packagePhoto: { width: '100%', height: 160, borderRadius: Radii.md, marginTop: Spacing.md },
   map: { height: 200, borderRadius: Radii.lg, overflow: 'hidden', backgroundColor: Colors.cardHover },
   card: { backgroundColor: Colors.card, borderRadius: Radii.lg, borderWidth: 1, borderColor: Colors.cardBorder, padding: Spacing.lg },
   cardTitle: { ...Typography.h3, color: Colors.textPrimary },

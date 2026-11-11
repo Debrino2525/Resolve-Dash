@@ -51,6 +51,7 @@ function order(over: Partial<DeliveryOrder> = {}): DeliveryOrder {
     paymentMethod: 'CASH',
     deliveryPin: '8309',
     pinAttempts: 0,
+    packagePhotoPath: null,
     rating: null,
     ratingTags: null,
     ratingComment: null,

@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cancelOrder, getOrder, rateOrder } from '../api/backendClient';
+import { AuthImage } from '../components/AuthImage';
+import { ChatSheet } from '../components/ChatSheet';
 import { DeliveryMap } from '../components/DeliveryMap';
 import { InlineNotice } from '../components/InlineNotice';
 import { TactileButton } from '../components/TactileButton';
@@ -52,12 +54,16 @@ export function TrackingScreen({ orderId, initial, onClose, onRebook, onChanged 
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<{ latitude: number; longitude: number }[] | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  // Messages already seen; newer ones show as a badge on the Chat button.
+  const [seen, setSeen] = useState<number | null>(initial?.messageCount ?? null);
   const lastStatus = useRef(initial?.status);
 
   const load = useCallback(async (): Promise<void> => {
     try {
       const o = await getOrder(orderId);
       setOrder(o);
+      setSeen((v) => v ?? o.messageCount);
       setError(null);
       if (o.status !== lastStatus.current) {
         lastStatus.current = o.status;
@@ -150,7 +156,11 @@ export function TrackingScreen({ orderId, initial, onClose, onRebook, onChanged 
 
         {(order.status === 'ASSIGNED' || order.status === 'PICKED_UP') && order.rider && (
           <>
-            <RiderCard order={order} />
+            <RiderCard
+              order={order}
+              unread={Math.max(0, order.messageCount - (seen ?? order.messageCount))}
+              onChat={() => setChatOpen(true)}
+            />
             <PinCard order={order} />
           </>
         )}
@@ -182,12 +192,28 @@ export function TrackingScreen({ orderId, initial, onClose, onRebook, onChanged 
 
         <Summary order={order} />
 
+        {order.rider && order.status === 'DELIVERED' && order.messageCount > 0 && (
+          <TouchableOpacity onPress={() => setChatOpen(true)} style={styles.linkBtn} accessibilityRole="button">
+            <Text style={styles.link}>View messages</Text>
+          </TouchableOpacity>
+        )}
+
         {(order.status === 'SEARCHING' || order.status === 'ASSIGNED') && (
           <TouchableOpacity onPress={cancel} disabled={cancelling} style={styles.linkBtn} accessibilityRole="button">
             <Text style={styles.danger}>{cancelling ? 'Cancelling…' : 'Cancel delivery'}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      {order.rider && (
+        <ChatSheet
+          visible={chatOpen}
+          orderId={order.id}
+          otherName={order.rider.fullName.split(' ')[0] ?? 'Your rider'}
+          onClose={() => setChatOpen(false)}
+          onSeen={setSeen}
+        />
+      )}
     </View>
   );
 }
@@ -231,7 +257,15 @@ function Searching({ requestedAt }: { requestedAt: string }): React.JSX.Element 
   );
 }
 
-function RiderCard({ order }: { order: CustomerOrder }): React.JSX.Element {
+function RiderCard({
+  order,
+  unread,
+  onChat,
+}: {
+  order: CustomerOrder;
+  unread: number;
+  onChat: () => void;
+}): React.JSX.Element {
   const r = order.rider!;
   const wa = r.phoneNumber.replace(/^\+/, '');
   return (
@@ -264,6 +298,20 @@ function RiderCard({ order }: { order: CustomerOrder }): React.JSX.Element {
           <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
+      <TouchableOpacity
+        style={styles.chatBtn}
+        onPress={onChat}
+        accessibilityRole="button"
+        accessibilityLabel={unread ? `Chat, ${unread} new` : 'Chat with your rider'}
+      >
+        <Ionicons name="chatbubbles-outline" size={20} color={Colors.dispatchGreenLight} />
+        <Text style={[styles.link, styles.flex]}>Chat · send a photo of the package or gate</Text>
+        {unread > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{unread}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
       {!r.location && <Text style={[styles.small, styles.mt]}>Waiting for the rider's location…</Text>}
     </View>
   );
@@ -376,6 +424,9 @@ function Rated({ order }: { order: CustomerOrder }): React.JSX.Element {
 function Summary({ order }: { order: CustomerOrder }): React.JSX.Element {
   return (
     <View style={styles.card}>
+      {order.hasPackagePhoto && (
+        <AuthImage path={`/orders/${order.id}/package-photo`} style={styles.packagePhoto} />
+      )}
       <Stop icon="cube" color={Colors.dispatchGreen} label="Pickup" s={order.pickup} />
       <View style={styles.connector} />
       <Stop icon="flag" color={Colors.textPrimary} label="Drop-off" s={order.dropoff} />
@@ -448,6 +499,27 @@ const styles = StyleSheet.create({
   progress: { flexDirection: 'row', gap: 6, marginTop: Spacing.md },
   progressBar: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.cardBorder },
   progressOn: { backgroundColor: Colors.dispatchGreen },
+  chatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    minHeight: TOUCH_TARGET,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.cardBorder,
+    paddingTop: Spacing.sm,
+  },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.dangerRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  badgeText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+  packagePhoto: { width: '100%', height: 160, marginBottom: Spacing.md },
   card: { backgroundColor: Colors.card, borderRadius: Radii.lg, borderWidth: 1, borderColor: Colors.cardBorder, padding: Spacing.lg },
   cardTitle: { ...Typography.h3, color: Colors.textPrimary },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },

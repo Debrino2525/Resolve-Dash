@@ -35,6 +35,8 @@ export interface DeliveryOrder {
   paymentMethod: 'CASH';
   deliveryPin: string;
   pinAttempts: number;
+  /** Storage path of the optional package photo (order-photos bucket). */
+  packagePhotoPath: string | null;
   rating: number | null;
   ratingTags: string[] | null;
   ratingComment: string | null;
@@ -60,8 +62,13 @@ export interface AssignedRider {
 }
 
 /** What the customer app receives. Includes the handover PIN; never sent to riders. */
-export interface CustomerOrderView extends Omit<DeliveryOrder, 'pinAttempts' | 'customerId'> {
+export interface CustomerOrderView extends Omit<
+  DeliveryOrder,
+  'pinAttempts' | 'customerId' | 'packagePhotoPath'
+> {
   rider: AssignedRider | null;
+  hasPackagePhoto: boolean;
+  messageCount: number;
 }
 
 /** What the rider app receives for its current job: no PIN, but both contacts. */
@@ -81,6 +88,8 @@ export interface RiderJobView {
   customerName: string;
   assignedAt: string | null;
   pickedUpAt: string | null;
+  hasPackagePhoto: boolean;
+  messageCount: number;
 }
 
 export interface RiderOfferView {
@@ -96,4 +105,5 @@ export interface RiderOfferView {
   durationSeconds: number;
   farePesewas: number;
   paymentMethod: 'CASH';
+  hasPackagePhoto: boolean;
 }

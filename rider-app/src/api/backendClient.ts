@@ -1,5 +1,6 @@
 import { File } from 'expo-file-system';
 import { getValidAccessToken } from '../auth/supabase';
+import { PickedPhoto } from '../services/photos';
 import { DispatchState } from '../types/dispatch';
 import { DocumentChecklist, PickedFile, RiderDocumentType } from '../types/documents';
 import { toPesewas } from '../types/money';
@@ -247,3 +248,52 @@ export async function markDelivered(jobId: string, pin: string): Promise<Dispatc
 export async function releaseJob(jobId: string): Promise<DispatchState> {
   return authenticatedFetch<DispatchState>(`/riders/me/jobs/${jobId}/release`, { method: 'POST' });
 }
+
+// ---------- Photos and chat (package photo, customer ↔ rider messages) ----------
+
+/** Full URL for an API path (used by AuthImage, which adds the sign-in header). */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderRole: 'CUSTOMER' | 'RIDER';
+  mine: boolean;
+  body: string | null;
+  hasPhoto: boolean;
+  createdAt: string;
+}
+
+export interface ChatThread {
+  orderId: string;
+  myRole: 'CUSTOMER' | 'RIDER';
+  open: boolean;
+  messages: ChatMessage[];
+}
+
+/** multipart form with the photo as `file` (Expo fetch needs name/type/bytes parts). */
+function photoForm(photo: PickedPhoto, fields: Record<string, string> = {}): FormData {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  const local = new File(photo.uri);
+  form.append('file', {
+    name: photo.name,
+    type: photo.type,
+    bytes: () => local.bytes(),
+  } as unknown as Blob);
+  return form;
+}
+
+export const getChatThread = (orderId: string): Promise<ChatThread> =>
+  authenticatedFetch<ChatThread>(`/orders/${orderId}/messages`, { method: 'GET' });
+
+export const sendChatMessage = (orderId: string, body: string): Promise<ChatThread> =>
+  authenticatedFetch<ChatThread>(`/orders/${orderId}/messages`, { method: 'POST', body: JSON.stringify({ body }) });
+
+export const sendChatPhoto = (orderId: string, photo: PickedPhoto, caption?: string): Promise<ChatThread> =>
+  authenticatedFetch<ChatThread>(
+    `/orders/${orderId}/messages/photo`,
+    { method: 'POST', body: photoForm(photo, caption ? { caption } : {}) },
+    60000,
+  );

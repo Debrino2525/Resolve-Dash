@@ -1,3 +1,5 @@
+import type { PickedPhoto } from '../services/photos';
+
 export type OrderStatus = 'SEARCHING' | 'ASSIGNED' | 'PICKED_UP' | 'DELIVERED' | 'CANCELLED' | 'NO_RIDER';
 export type PackageType = 'DOCUMENT' | 'SMALL_PARCEL' | 'FOOD' | 'LARGE_ITEM';
 
@@ -76,6 +78,8 @@ export interface CustomerOrder {
   deliveredAt: string | null;
   cancelledAt: string | null;
   rider: AssignedRider | null;
+  hasPackagePhoto: boolean;
+  messageCount: number;
 }
 
 export interface Quote {
@@ -109,6 +113,8 @@ export interface DeliveryDraft {
   packageType: PackageType;
   fragile: boolean;
   notes: string | null;
+  /** Local photo of the item, uploaded when the order is requested (never sent as JSON). */
+  packagePhoto?: PickedPhoto | null;
 }
 
 /** 2453 → "GH₵24.53" */

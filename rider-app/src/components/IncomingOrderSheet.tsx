@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatDuration } from '../services/routing';
+import { AuthImage } from './AuthImage';
 import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
 import { cedis, PACKAGE_LABEL, RiderOffer } from '../types/dispatch';
 import { formatDistance } from '../utils/geo';
@@ -69,6 +70,9 @@ export function IncomingOrderSheet({
               <Text style={styles.chip}>{PACKAGE_LABEL[offer.packageType]}</Text>
               {offer.fragile && <Text style={[styles.chip, styles.chipWarn]}>Fragile</Text>}
             </View>
+            {offer.hasPackagePhoto && (
+              <AuthImage path={`/orders/${offer.orderId}/package-photo`} style={styles.packagePhoto} />
+            )}
           </View>
 
           <View style={styles.route}>
@@ -185,6 +189,7 @@ const styles = StyleSheet.create({
   fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   fare: { ...Typography.display, color: Colors.textPrimary },
   fareSub: { ...Typography.caption, color: Colors.textSecondary },
+  packagePhoto: { width: 72, height: 72, marginLeft: Spacing.md },
   chips: { alignItems: 'flex-end', gap: 6 },
   chip: {
     ...Typography.micro,

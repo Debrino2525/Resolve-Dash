@@ -5,6 +5,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Image,
   Switch,
   Text,
   TextInput,
@@ -17,6 +18,7 @@ import { PlacePicker } from '../components/PlacePicker';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TactileButton } from '../components/TactileButton';
 import { getCurrentPoint } from '../services/location';
+import { PickedPhoto, pickPhoto } from '../services/photos';
 import { reverseGeocode } from '../services/mapbox';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 import {
@@ -69,6 +71,7 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
   const [packageType, setPackageType] = useState<PackageType>(initial?.packageType ?? 'SMALL_PARCEL');
   const [fragile, setFragile] = useState(initial?.fragile ?? false);
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [photo, setPhoto] = useState<PickedPhoto | null>(initial?.packagePhoto ?? null);
   const [picking, setPicking] = useState<'pickup' | 'dropoff' | null>(null);
   const [here, setHere] = useState<Point | null>(null);
   const [busy, setBusy] = useState(false);
@@ -121,6 +124,7 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
         packageType,
         fragile,
         notes: notes.trim() || null,
+        packagePhoto: photo,
       };
       const quote = await getQuote(draft.pickup, draft.dropoff);
       onQuoted(draft, quote);
@@ -179,6 +183,37 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
               );
             })}
           </View>
+          <Text style={[styles.label, styles.photoLabel]}>Photo of the item (optional)</Text>
+          {photo ? (
+            <View style={styles.photoRow}>
+              <Image source={{ uri: photo.uri }} style={styles.photo} accessibilityLabel="Photo of the item" />
+              <View style={styles.flex}>
+                <Text style={styles.switchHint}>The rider sees this before accepting.</Text>
+                <TouchableOpacity onPress={() => setPhoto(null)} accessibilityRole="button">
+                  <Text style={styles.removeLink}>Remove photo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.photoButtons}>
+              <TouchableOpacity
+                style={styles.photoBtn}
+                onPress={() => void pickPhoto('camera').then((p) => p && setPhoto(p))}
+                accessibilityRole="button"
+              >
+                <Ionicons name="camera-outline" size={20} color={Colors.dispatchGreenLight} />
+                <Text style={styles.photoBtnText}>Take photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.photoBtn}
+                onPress={() => void pickPhoto('library').then((p) => p && setPhoto(p))}
+                accessibilityRole="button"
+              >
+                <Ionicons name="image-outline" size={20} color={Colors.dispatchGreenLight} />
+                <Text style={styles.photoBtnText}>From gallery</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={styles.switchRow}>
             <View style={styles.flex}>
               <Text style={styles.switchLabel}>Fragile</Text>
@@ -376,6 +411,24 @@ const styles = StyleSheet.create({
   packageOn: { borderColor: Colors.dispatchGreen, backgroundColor: Colors.dispatchGreenGlow },
   packageLabel: { ...Typography.bodyBold, color: Colors.textPrimary, marginTop: Spacing.xs },
   packageHint: { ...Typography.caption, color: Colors.textMuted },
+  photoLabel: { marginTop: Spacing.lg },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  photo: { width: 88, height: 88, borderRadius: Radii.md, backgroundColor: Colors.surfaceLight },
+  removeLink: { ...Typography.caption, color: Colors.dangerRed, fontWeight: '700', paddingVertical: Spacing.sm },
+  photoButtons: { flexDirection: 'row', gap: Spacing.sm },
+  photoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    minHeight: 48,
+    borderRadius: Radii.md,
+    borderWidth: 1.5,
+    borderColor: Colors.cardBorder,
+    borderStyle: 'dashed',
+  },
+  photoBtnText: { ...Typography.bodyBold, color: Colors.dispatchGreenLight },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginVertical: Spacing.lg },
   switchLabel: { ...Typography.bodyBold, color: Colors.textPrimary },
   switchHint: { ...Typography.caption, color: Colors.textMuted },

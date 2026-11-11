@@ -23,7 +23,8 @@
       "package": "com.ghanadash.app",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "CAMERA"
       ],
       "blockedPermissions": [
         "ACCESS_BACKGROUND_LOCATION"
@@ -39,7 +40,15 @@
           "isIosBackgroundLocationEnabled": false
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GhanaDash uses your photos so you can show the rider your package or the pickup spot.",
+          "cameraPermission": "GhanaDash uses the camera so you can photograph your package or the pickup spot for the rider.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

@@ -55,6 +55,8 @@ export interface CreateOrderInput {
   fragile: boolean;
   notes: string | null;
   quoteToken: string;
+  /** Path returned by POST /orders/package-photo (must be in this user's own folder). */
+  packagePhotoPath?: string | null;
 }
 
 const round5 = (n: number): number => Math.round(n * 1e5) / 1e5;
@@ -125,6 +127,10 @@ export class OrderService {
     if (q.exp <= now) {
       throw new BadRequestException('This price quote has expired. Please get a new quote.');
     }
+    const photo = input.packagePhotoPath ?? null;
+    if (photo && !isOwnPackagePhotoPath(userId, photo)) {
+      throw new BadRequestException('That package photo could not be used. Please add it again.');
+    }
     if ((await this.orders.countActiveForCustomer(userId)) >= MAX_ACTIVE_ORDERS) {
       throw new ConflictException(
         `You can have up to ${MAX_ACTIVE_ORDERS} active deliveries at a time.`,
@@ -148,6 +154,7 @@ export class OrderService {
           distanceFarePesewas: q.df,
           farePesewas: q.f,
           deliveryPin: crypto.randomInt(0, 10_000).toString().padStart(4, '0'),
+          packagePhotoPath: photo,
         });
       } catch (err) {
         const pg = err as { code?: string; constraint?: string };
@@ -246,14 +253,22 @@ export class OrderService {
 
   private async toView(order: DeliveryOrder, withRider = true): Promise<CustomerOrderView> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { pinAttempts, customerId, ...rest } = order;
+    const { pinAttempts, customerId, packagePhotoPath, ...rest } = order;
     const showRider =
       withRider && order.riderId && ['ASSIGNED', 'PICKED_UP', 'DELIVERED'].includes(order.status);
     const rider = showRider ? await this.orders.assignedRider(order.riderId as string) : null;
     // Live position only while the rider is actually on this job.
     if (rider && order.status === 'DELIVERED') rider.location = null;
-    return { ...rest, rider };
+    const messageCount = order.riderId ? await this.orders.messageCount(order.id) : 0;
+    return { ...rest, rider, hasPackagePhoto: Boolean(packagePhotoPath), messageCount };
   }
+}
+
+/** Package photos are uploaded by the customer into <their uid>/package/<uuid>.<ext>. */
+export function isOwnPackagePhotoPath(userId: string, path: string): boolean {
+  return new RegExp(
+    `^${userId}/package/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$`,
+  ).test(path);
 }
 
 export function generateCode(): string {

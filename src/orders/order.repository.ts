@@ -33,6 +33,7 @@ interface OrderRow {
   fare_pesewas: number;
   payment_method: 'CASH';
   delivery_pin: string;
+  package_photo_path: string | null;
   pin_attempts: number;
   rating: number | null;
   rating_tags: string[] | null;
@@ -83,6 +84,7 @@ export function mapOrder(r: OrderRow): DeliveryOrder {
     farePesewas: r.fare_pesewas,
     paymentMethod: r.payment_method,
     deliveryPin: r.delivery_pin,
+    packagePhotoPath: r.package_photo_path ?? null,
     pinAttempts: r.pin_attempts,
     rating: r.rating,
     ratingTags: r.rating_tags,
@@ -111,6 +113,7 @@ export interface NewOrder {
   distanceFarePesewas: number;
   farePesewas: number;
   deliveryPin: string;
+  packagePhotoPath: string | null;
 }
 
 @Injectable()
@@ -124,8 +127,8 @@ export class OrderRepository {
          pickup_lat, pickup_lng, pickup_address, pickup_landmark, pickup_gps_code, pickup_contact_name, pickup_contact_phone,
          dropoff_lat, dropoff_lng, dropoff_address, dropoff_landmark, dropoff_gps_code, receiver_name, receiver_phone,
          package_type, fragile, notes, distance_m, duration_s,
-         base_fare_pesewas, distance_fare_pesewas, fare_pesewas, delivery_pin
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+         base_fare_pesewas, distance_fare_pesewas, fare_pesewas, delivery_pin, package_photo_path
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
        RETURNING *`,
       [
         o.code,
@@ -153,9 +156,19 @@ export class OrderRepository {
         o.distanceFarePesewas,
         o.farePesewas,
         o.deliveryPin,
+        o.packagePhotoPath,
       ],
     );
     return mapOrder(res.rows[0]);
+  }
+
+  /** Number of chat messages on an order (for unread badges). */
+  async messageCount(orderId: string): Promise<number> {
+    const res = await this.db.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM order_messages WHERE order_id = $1`,
+      [orderId],
+    );
+    return Number(res.rows[0]?.n ?? 0);
   }
 
   async findById(id: string): Promise<DeliveryOrder | null> {

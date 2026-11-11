@@ -60,6 +60,7 @@ export const createOrderSchema = z.object({
   fragile: z.boolean().default(false),
   notes: optionalText(500),
   quoteToken: z.string().min(10).max(2000),
+  packagePhotoPath: z.string().max(300).optional().nullable(),
 });
 
 export const cancelSchema = z.object({ reason: z.string().trim().max(255).optional() });

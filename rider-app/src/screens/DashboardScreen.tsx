@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountSheet } from '../components/AccountSheet';
+import { AuthImage } from '../components/AuthImage';
+import { ChatSheet } from '../components/ChatSheet';
 import { DailyEarningsCard } from '../components/DailyEarningsCard';
 import { DispatchMap } from '../components/DispatchMap';
 import { IncomingOrderSheet } from '../components/IncomingOrderSheet';
@@ -58,6 +60,9 @@ export function DashboardScreen({
   const [navigating, setNavigating] = useState(false);
   const [muted, setMuted] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  // Messages seen per job; newer ones show as a badge on the Chat button.
+  const [seen, setSeen] = useState<{ jobId: string; count: number } | null>(null);
   const [goingOnline, setGoingOnline] = useState(false);
 
   // Location tracking follows the server's view: on duty, or finishing a job.
@@ -77,6 +82,10 @@ export function DashboardScreen({
   }, [online, job]);
 
   const stage = job?.status === 'PICKED_UP' ? 'TO_DROPOFF' : 'TO_PICKUP';
+  useEffect(() => {
+    if (job && seen?.jobId !== job.id) setSeen({ jobId: job.id, count: job.messageCount });
+  }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unread = job && seen?.jobId === job.id ? Math.max(0, job.messageCount - seen.count) : 0;
   const canGoOnline = subscription?.canAcceptOrders ?? false;
 
   // Tell the rider when a job disappears without them finishing it (customer cancelled).
@@ -298,7 +307,24 @@ export function DashboardScreen({
           {job.fragile && <Text style={[styles.chip, styles.chipWarn]}>Fragile</Text>}
           <Text style={[styles.chip, styles.chipCash]}>Collect {cedis(job.farePesewas)} cash</Text>
         </View>
+        {job.hasPackagePhoto && (
+          <AuthImage path={`/orders/${job.id}/package-photo`} style={styles.packagePhoto} />
+        )}
         {job.notes ? <Text style={styles.notes}>“{job.notes}”</Text> : null}
+        <TouchableOpacity
+          style={styles.chatBtn}
+          onPress={() => setChatOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={unread ? `Chat with customer, ${unread} new` : 'Chat with customer'}
+        >
+          <Ionicons name="chatbubbles-outline" size={20} color={Colors.dispatchGreenLight} />
+          <Text style={styles.chatText}>Chat with {job.customerName.split(' ')[0]}</Text>
+          {unread > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unread}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <Text style={styles.small}>
           Order {job.code} · for {job.customerName}
         </Text>
@@ -474,6 +500,16 @@ export function DashboardScreen({
           busy={dispatch.busy}
           onAccept={() => void dispatch.accept(offer.id)}
           onDecline={() => void dispatch.decline(offer.id)}
+        />
+      )}
+
+      {job && (
+        <ChatSheet
+          visible={chatOpen}
+          orderId={job.id}
+          otherName={job.customerName.split(' ')[0] ?? 'Customer'}
+          onClose={() => setChatOpen(false)}
+          onSeen={(count) => setSeen({ jobId: job.id, count })}
         />
       )}
 
@@ -714,6 +750,27 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textMuted,
   },
+  packagePhoto: { width: '100%', height: 150 },
+  chatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minHeight: TOUCH_TARGET,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.background,
+  },
+  chatText: { ...Typography.bodyBold, color: Colors.dispatchGreenLight, flex: 1 },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.dangerRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  badgeText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
   jobBody: {
     gap: Spacing.md,
     marginTop: Spacing.md,

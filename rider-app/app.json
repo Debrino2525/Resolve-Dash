@@ -35,8 +35,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "GhanaDash needs your photos so you can upload your Ghana Card, licence, roadworthy and insurance documents for verification.",
-          "cameraPermission": "GhanaDash uses the camera so you can photograph your Ghana Card, licence, roadworthy and insurance documents for verification.",
+          "photosPermission": "GhanaDash needs your photos to upload your rider documents and to send delivery photos in chat.",
+          "cameraPermission": "GhanaDash uses the camera for your rider documents and for delivery photos in chat.",
           "microphonePermission": false
         }
       ],

@@ -59,6 +59,7 @@ export class OrderController {
       fragile: b.fragile,
       notes: b.notes,
       quoteToken: b.quoteToken,
+      packagePhotoPath: b.packagePhotoPath ?? null,
     });
   }
 
