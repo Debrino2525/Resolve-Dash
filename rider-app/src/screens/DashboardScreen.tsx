@@ -527,6 +527,7 @@ export function DashboardScreen({
         riderName={profile.fullName}
         email={email}
         phoneNumber={profile.phoneNumber}
+        work={{ online, today, subscription, onRenewSubscription, renewLoading }}
         onSignOut={onSignOut}
       />
     </View>

@@ -86,6 +86,13 @@ export const TOUCH_TARGET = 48;
 
 /** Soft elevation for floating elements over the map. */
 export const Elevation = {
+  card: {
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
   floating: {
     shadowColor: '#000',
     shadowOpacity: 0.35,

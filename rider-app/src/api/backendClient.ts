@@ -92,13 +92,14 @@ async function authenticatedFetch<T>(
  * Submits initial onboarding profile after authentication.
  * Creates rider row with status 'PENDING_VERIFICATION'.
  */
+/** `phoneVerificationToken` is null when the rider signed in with their (already verified) phone. */
 export async function onboardRider(
   fullName: string,
-  phoneVerificationToken: string,
+  phoneVerificationToken: string | null,
 ): Promise<RiderProfile> {
   return authenticatedFetch<RiderProfile>('/riders/onboard', {
     method: 'POST',
-    body: JSON.stringify({ fullName, phoneVerificationToken }),
+    body: JSON.stringify({ fullName, ...(phoneVerificationToken ? { phoneVerificationToken } : {}) }),
   });
 }
 

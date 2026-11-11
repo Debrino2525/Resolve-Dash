@@ -8,7 +8,8 @@
     "scheme": "ghanadash-rider",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.ghanadash.rider"
+      "bundleIdentifier": "com.ghanadash.rider",
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -49,6 +50,7 @@
         }
       ],
       "expo-secure-store",
+      "expo-apple-authentication",
       "expo-audio"
     ]
   }

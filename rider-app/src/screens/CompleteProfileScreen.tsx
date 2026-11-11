@@ -18,8 +18,13 @@ import { formatGhanaLocal, toGhanaE164 } from '../utils/phone';
 export interface CompleteProfileScreenProps {
   /** Signed-in account, shown so the rider knows which login this profile belongs to. */
   accountEmail: string | null;
-  /** Creates the rider profile with the SMS proof; the parent then moves on. */
-  onComplete: (fullName: string, phoneVerificationToken: string) => Promise<void>;
+  /**
+   * Set when the rider signed in with their phone (+233…): Supabase already verified it, so only
+   * the name is asked and no second SMS is sent.
+   */
+  verifiedPhone?: string | null;
+  /** Creates the rider profile (with the SMS proof, or null for a verified sign-in phone). */
+  onComplete: (fullName: string, phoneVerificationToken: string | null) => Promise<void>;
   onSignOut: () => Promise<void>;
 }
 
@@ -32,6 +37,7 @@ type Step = 'details' | 'code';
  */
 export function CompleteProfileScreen({
   accountEmail,
+  verifiedPhone = null,
   onComplete,
   onSignOut,
 }: CompleteProfileScreenProps): React.JSX.Element {
@@ -45,8 +51,20 @@ export function CompleteProfileScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const phoneE164 = toGhanaE164(phoneInput);
+  const phoneE164 = verifiedPhone ?? toGhanaE164(phoneInput);
   const detailsValid = fullName.trim().length >= 2 && phoneE164 !== null;
+
+  const finishWithVerifiedPhone = async (): Promise<void> => {
+    if (fullName.trim().length < 2 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onComplete(fullName.trim(), null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your details');
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -93,7 +111,9 @@ export function CompleteProfileScreen({
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <StatusTelemetryPill
-          statusText={step === 'details' ? 'Step 1 of 2 · Your details' : 'Step 2 of 2 · SMS code'}
+          statusText={
+            verifiedPhone ? 'Last step · Your name' : step === 'details' ? 'Step 1 of 2 · Your details' : 'Step 2 of 2 · SMS code'
+          }
           badgeText="GHANA"
           variant="blue"
         />
@@ -109,8 +129,9 @@ export function CompleteProfileScreen({
             <>
               <Text style={styles.title}>Complete your rider profile</Text>
               <Text style={styles.subtitle}>
-                {accountEmail ? `Signed in as ${accountEmail}. ` : ''}We'll text a code to confirm
-                your mobile number. Dispatch and customers will reach you on it.
+                {verifiedPhone
+                  ? `Your number ${formatGhanaLocal(verifiedPhone)} is confirmed. Enter your name exactly as on your Ghana Card.`
+                  : `${accountEmail ? `Signed in as ${accountEmail}. ` : ''}We'll text a code to confirm your mobile number. Dispatch and customers will reach you on it.`}
               </Text>
 
               <Text style={styles.label}>Full legal name (as on your Ghana Card)</Text>
@@ -125,7 +146,8 @@ export function CompleteProfileScreen({
                 onChangeText={setFullName}
               />
 
-              <Text style={styles.label}>Mobile number</Text>
+              {!verifiedPhone && <Text style={styles.label}>Mobile number</Text>}
+              {!verifiedPhone && (
               <View style={styles.phoneRow}>
                 <View style={styles.flagPrefix}>
                   <Text style={styles.flagText}>🇬🇭 +233</Text>
@@ -142,14 +164,15 @@ export function CompleteProfileScreen({
                   onChangeText={setPhoneInput}
                 />
               </View>
-              {phoneInput.length >= 9 && !phoneE164 && (
+              )}
+              {!verifiedPhone && phoneInput.length >= 9 && !phoneE164 && (
                 <Text style={styles.hint}>Enter a Ghana mobile number, e.g. 024 123 4567</Text>
               )}
 
               <TactileButton
-                title="Send SMS Code"
+                title={verifiedPhone ? 'Finish' : 'Send SMS Code'}
                 variant="primary"
-                onPress={sendCode}
+                onPress={verifiedPhone ? finishWithVerifiedPhone : sendCode}
                 loading={busy}
                 disabled={!detailsValid || busy}
                 style={styles.primaryButton}
