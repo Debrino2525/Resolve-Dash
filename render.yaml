@@ -1,0 +1,46 @@
+# Render Blueprint for the GhanaDash API + admin portal (one always-on web service).
+# Render → New → Blueprint → pick this repo and branch. Secrets marked sync:false are entered in
+# the dashboard, never committed. Then add the custom domains in Render and CNAME them in
+# Cloudflare (PRODUCTION.md §3–4).
+services:
+  - type: web
+    name: ghanadash-api
+    runtime: docker
+    region: frankfurt # closest Render region to the Supabase database (eu-west-1)
+    plan: starter # always on; free instances sleep, which would stop dispatch
+    numInstances: 1 # dispatch timer and SMS codes live in one process: keep a single instance
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ADMIN_HOST
+        value: ghanadash-admin.globitechcybersolutions.com
+      - key: PAYSTACK_CALLBACK_URL
+        value: https://ghanadash-api.globitechcybersolutions.com/subscriptions/callback
+      - key: MNOTIFY_SENDER_ID
+        value: GhanaDash
+      - key: FARE_BASE_PESEWAS
+        value: "1800"
+      - key: FARE_PER_KM_PESEWAS
+        value: "125"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL_CA
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: MNOTIFY_API_KEY
+        sync: false
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: PHONE_VERIFICATION_SECRET
+        generateValue: true
+      - key: ORDER_QUOTE_SECRET
+        generateValue: true
