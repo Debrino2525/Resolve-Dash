@@ -131,7 +131,7 @@ TEST_DATABASE_URL=postgresql://postgres:<PASSWORD>@<TEST_PROJECT_DB_HOST>:5432/p
 * **Dispatch eligibility** (`GET /subscriptions/me` → `canAcceptOrders`) requires both an admin-approved rider (`onboarding_status = 'ACTIVE'`) **and** subscription coverage. Rejected or pending riders get `ineligibleReason: 'RIDER_NOT_APPROVED'` even if they hold paid or granted access. The app shows rejected riders a blocked screen.
 * **Subscription status is computed from timestamps when read** (`src/subscriptions/subscription-state.ts`): ACTIVE while `paid_until` is in the future, then TRIAL while `trial_ends_at` is, then `GRACE_PERIOD` for `GRACE_PERIOD_HOURS` after a *paid* week ends (an expired trial gets no grace), then SUSPENDED. Nothing updates the stored `status` column as time passes, so the API and admin roster never use it directly.
 * **Audit**: approve and reject write `rider_approval_events` with the acting admin's user id. Trial starts and "+7 days free" grants write `subscription_events` with `actor_id = 'admin:<user id>'`.
-* **Phone numbers are not OTP-verified** (sign-in is email + password). Confirm the number with the rider before approving. A number already used by another account is rejected with 409.
+* **Phone numbers are SMS-verified** before a rider profile can be created (see "Rider sign-in" below). A number already owned by another rider is refused with 409 *before* any SMS is spent.
 
 ### Provisioning an admin account
 1. Create the user in Supabase Dashboard → Authentication → Users → **Add user** (email + password, auto-confirm).
@@ -144,6 +144,26 @@ TEST_DATABASE_URL=postgresql://postgres:<PASSWORD>@<TEST_PROJECT_DB_HOST>:5432/p
 3. Set `SUPABASE_ANON_KEY` (and `SUPABASE_URL`) in the backend `.env`. The admin page signs in through `POST /admin/api/login`, which calls Supabase on the server, so the page can stay same-origin under Helmet's CSP.
 4. Open `https://<backend host>/admin` and sign in. The session token is kept in `sessionStorage` and dropped when the tab closes or the token expires (about 1 hour).
 * **Service-Role Key Isolation**: The `SUPABASE_SERVICE_ROLE_KEY` is restricted strictly to the internal Admin Approval module for `app_metadata` synchronization. Everyday rider, consumer, and billing endpoints use the limited `ghana_delivery_app` database role and public JWKS verification.
+
+### Rider sign-in: Google or email, then SMS-verified phone
+1. **Sign in.** "Continue with Google" (Supabase OAuth) or email + password, with separate *Sign in* and *Create account* tabs. With "Confirm email" on in Supabase, new email accounts must click the emailed link before signing in.
+2. **First sign-in only: Complete Profile.** The rider enters legal name and Ghana mobile number. The backend texts a 6-digit code through **mNotify**: `POST /riders/phone/send-code`, limited to 3 per minute per IP with a 30-second cooldown per account.
+3. **The rider enters the code.** `POST /riders/phone/verify` returns a signed proof valid for 30 minutes. `POST /riders/onboard` only creates the profile with the phone in that proof. A typed-in number is ignored unless `REQUIRE_VERIFIED_PHONE=false`.
+4. **Code rules.** Codes expire after 10 minutes and are single-use. 5 wrong tries burn a code, and a new request cancels the previous code.
+5. **Returning riders** go straight to their pending, rejected or dashboard screen.
+
+**Google setup (Supabase Dashboard → Authentication):**
+* **Providers → Google:** must be enabled with your Google OAuth client ID and secret. In Google Cloud Console, the client's authorised redirect URI is `https://<project-ref>.supabase.co/auth/v1/callback`.
+* **URL Configuration → Redirect URLs:** add `exp://**` (Expo Go during development) and `ghanadash-rider://**` (installed app).
+
+**mNotify setup:**
+* Set `MNOTIFY_API_KEY` and `MNOTIFY_SENDER_ID` in the backend `.env`.
+* Register the sender ID in mNotify **as an OTP sender ID** (with an `otp_url`, e.g. your website). mNotify rejects OTP messages from other sender IDs.
+* Each OTP SMS costs credit, plus mNotify's OTP campaign fee.
+* Without mNotify settings, development prints codes to the backend log (`[DEV — not sent]`). Production refuses to start without them.
+* Set `PHONE_VERIFICATION_SECRET` in production.
+
+**Limitation:** pending codes are held in the backend's memory. That's fine for one server. Before running several instances, move them to the database or Redis.
 
 ---
 

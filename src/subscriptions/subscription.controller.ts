@@ -74,12 +74,20 @@ export class SubscriptionController {
     const protocol =
       req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
     const defaultBridge = `${protocol}://${host}/subscriptions/callback`;
+    // Production: always the configured HTTPS bridge, never a client-chosen URL or one built
+    // from the (spoofable) Host header. Development keeps the old flexibility for testing.
+    const configured = process.env.PAYSTACK_CALLBACK_URL?.trim();
     const clientCallback = body?.callbackUrl;
+    const clientAllowed =
+      process.env.NODE_ENV !== 'production' &&
+      !!clientCallback &&
+      (clientCallback.startsWith('http://') || clientCallback.startsWith('https://'));
     const effectiveCallbackUrl =
-      clientCallback &&
-      (clientCallback.startsWith('http://') || clientCallback.startsWith('https://'))
-        ? clientCallback
-        : defaultBridge;
+      process.env.NODE_ENV === 'production' && configured
+        ? configured
+        : clientAllowed
+          ? clientCallback
+          : defaultBridge;
 
     const session = await this.subscriptionService.initializeCheckout(
       user.id,

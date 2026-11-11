@@ -1,130 +1,231 @@
-import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { InlineNotice } from '../components/InlineNotice';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusTelemetryPill } from '../components/StatusTelemetryPill';
+import { getMyDocuments } from '../api/backendClient';
+import { AccountSheet } from '../components/AccountSheet';
+import { DocumentUploadSheet } from '../components/DocumentUploadSheet';
+import { ScreenTopBar } from '../components/ScreenTopBar';
 import { TactileButton } from '../components/TactileButton';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
+import { DocumentChecklist, DocumentChecklistItem } from '../types/documents';
+import { isoToDdMmYyyy } from '../utils/date';
 
 export interface PendingVerificationScreenProps {
   riderName: string;
+  email: string | null;
+  phoneNumber: string | null;
+  /** Re-reads the rider profile; moves to the dashboard once an admin approves. */
   onRefreshStatus: () => Promise<void>;
+  onSignOut: () => Promise<void>;
   loading: boolean;
 }
 
+const STATUS_UI: Record<
+  DocumentChecklistItem['status'],
+  { icon: React.ComponentProps<typeof Ionicons>['name']; text: string; color: string }
+> = {
+  MISSING: { icon: 'cloud-upload-outline', text: 'Tap to upload', color: Colors.amberLight },
+  SUBMITTED: { icon: 'time-outline', text: 'Submitted, awaiting review', color: Colors.textSecondary },
+  APPROVED: { icon: 'checkmark-circle', text: 'Approved', color: Colors.dispatchGreenLight },
+  REJECTED: { icon: 'alert-circle', text: 'Needs attention, tap to fix', color: Colors.dangerRed },
+};
+
+function headline(c: DocumentChecklist): { title: string; body: string } {
+  const rejected = c.items.some((i) => i.status === 'REJECTED');
+  if (rejected) {
+    return {
+      title: 'Some documents need attention',
+      body: 'Our team sent back at least one document. Open it to see what to fix, then resubmit.',
+    };
+  }
+  if (c.submittedCount < c.requiredCount) {
+    return {
+      title: 'Upload your documents',
+      body: `${c.submittedCount} of ${c.requiredCount} uploaded. We need all four before we can review your application.`,
+    };
+  }
+  if (c.approvedCount < c.requiredCount) {
+    return {
+      title: 'Documents under review',
+      body: 'Thanks! Our team is checking your documents. Pull down or tap Refresh to see updates.',
+    };
+  }
+  return {
+    title: 'Documents approved',
+    body: 'All documents are approved. Your account will be activated shortly; tap Refresh to check.',
+  };
+}
+
+/**
+ * Shown while the rider's application is pending: real document checklist with uploads,
+ * account menu (sign out, support), and status refresh.
+ */
 export function PendingVerificationScreen({
   riderName,
+  email,
+  phoneNumber,
   onRefreshStatus,
+  onSignOut,
   loading,
 }: PendingVerificationScreenProps): React.JSX.Element {
-  const handleCallSupport = (): void => {
-    Alert.alert(
-      'GhanaDash support',
-      'A rider support line is not connected yet. Refresh this screen after an admin approves your account.',
-    );
+  const [checklist, setChecklist] = useState<DocumentChecklist | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [editing, setEditing] = useState<DocumentChecklistItem | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+
+  const loadDocuments = useCallback(async (): Promise<void> => {
+    try {
+      setLoadError(null);
+      setChecklist(await getMyDocuments());
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not load your documents');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDocuments();
+  }, [loadDocuments]);
+
+  const refreshAll = async (): Promise<void> => {
+    setRefreshing(true);
+    await Promise.all([loadDocuments(), onRefreshStatus()]);
+    setRefreshing(false);
   };
 
+  const head = checklist ? headline(checklist) : null;
+  const progress = checklist ? checklist.submittedCount / checklist.requiredCount : 0;
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Telemetry Status Pill */}
-      <StatusTelemetryPill
-        statusText="PENDING HUB VERIFICATION"
-        badgeText="GHANA"
-        variant="amber"
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={Colors.dispatchGreen} />
+        }
+      >
+        <ScreenTopBar title="Rider application" riderName={riderName} onOpenAccount={() => setAccountOpen(true)} />
+
+        <View style={styles.hero}>
+          <Text style={styles.welcome}>Welcome, {riderName.split(' ')[0]}</Text>
+          {head ? (
+            <>
+              <Text style={styles.heroTitle}>{head.title}</Text>
+              <Text style={styles.heroBody}>{head.body}</Text>
+              <View
+                style={styles.progressTrack}
+                accessibilityRole="progressbar"
+                accessibilityValue={{ min: 0, max: checklist?.requiredCount ?? 4, now: checklist?.submittedCount ?? 0 }}
+              >
+                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
+              </View>
+              <Text style={styles.progressText}>
+                {checklist?.submittedCount}/{checklist?.requiredCount} uploaded ·{' '}
+                {checklist?.approvedCount}/{checklist?.requiredCount} approved
+              </Text>
+            </>
+          ) : loadError ? (
+            <InlineNotice tone="error" text={loadError} />
+          ) : (
+            <ActivityIndicator color={Colors.dispatchGreen} style={styles.loader} />
+          )}
+        </View>
+
+        <Text style={styles.sectionTitle}>Required documents</Text>
+        <View style={styles.list}>
+          {(checklist?.items ?? []).map((item) => {
+            const ui = STATUS_UI[item.status];
+            const tappable = item.status !== 'APPROVED';
+            return (
+              <TouchableOpacity
+                key={item.docType}
+                style={styles.row}
+                onPress={() => tappable && setEditing(item)}
+                disabled={!tappable}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.label}: ${ui.text}`}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.rowIcon, { backgroundColor: `${ui.color}22` }]}>
+                  <Ionicons name={ui.icon} size={20} color={ui.color} />
+                </View>
+                <View style={styles.rowText}>
+                  <Text style={styles.rowTitle}>{item.label}</Text>
+                  <Text style={[styles.rowStatus, { color: ui.color }]}>{ui.text}</Text>
+                  {item.status === 'REJECTED' && item.reviewNote && (
+                    <Text style={styles.rowNote} numberOfLines={2}>
+                      “{item.reviewNote}”
+                    </Text>
+                  )}
+                  {item.expiryDate && item.status !== 'REJECTED' && (
+                    <Text style={styles.rowMeta}>
+                      {item.documentNumber} · expires {isoToDdMmYyyy(item.expiryDate)}
+                    </Text>
+                  )}
+                </View>
+                {tappable && <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionTitle}>What happens next</Text>
+        <View style={styles.steps}>
+          <Step n={1} text="Upload your Ghana Card, licence, roadworthy certificate and insurance." />
+          <Step n={2} text="Our team checks each document. If something is unclear we'll tell you what to fix." />
+          <Step n={3} text="Once approved, your account is activated with a free trial and you can go on duty." />
+        </View>
+
+        <TactileButton
+          title="Refresh status"
+          variant="secondary"
+          onPress={refreshAll}
+          loading={loading || refreshing}
+          style={styles.refresh}
+        />
+        <TouchableOpacity onPress={() => setAccountOpen(true)} accessibilityRole="button" style={styles.helpLink}>
+          <Text style={styles.helpText}>Need help? Contact support · Sign out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <DocumentUploadSheet
+        item={editing}
+        onClose={() => setEditing(null)}
+        onUploaded={(c) => {
+          setChecklist(c);
+          setEditing(null);
+        }}
       />
 
-      {/* Hero Visual Card */}
-      <View style={styles.heroCard}>
-        <View style={styles.glowBacking} />
-        <View style={styles.emblemCircle}>
-          <Text style={styles.emblemIcon}>🏍️</Text>
-        </View>
+      <AccountSheet
+        visible={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        riderName={riderName}
+        email={email}
+        phoneNumber={phoneNumber}
+        onSignOut={onSignOut}
+      />
+    </View>
+  );
+}
 
-        <View style={styles.hubLocationBadge}>
-          <Text style={styles.hubLocationText}>📍 GhanaDash operations</Text>
-        </View>
-
-        <Text style={styles.heroHeading}>Verification in Progress</Text>
-        <Text style={styles.heroDescription}>
-          Welcome, <Text style={styles.boldText}>{riderName}</Text>. An admin still needs to
-          approve your account before you can go on duty anywhere in Ghana. Ghana Card and
-          motorbike checks are not collected in the app yet.
-        </Text>
+function Step({ n, text }: { n: number; text: string }): React.JSX.Element {
+  return (
+    <View style={styles.step}>
+      <View style={styles.stepNum}>
+        <Text style={styles.stepNumText}>{n}</Text>
       </View>
-
-      {/* Checklist Card */}
-      <View style={styles.checklistCard}>
-        <View style={styles.checklistHeader}>
-          <Text style={styles.checkTitle}>COMPLIANCE VERIFICATION</Text>
-          <Text style={styles.checkProgress}>0/3 SUBMITTED</Text>
-        </View>
-
-        {/* Step 1 */}
-        <View style={styles.checkItem}>
-          <View style={[styles.statusIconCircle, styles.iconPending]}>
-            <Text style={styles.checkClock}>⏳</Text>
-          </View>
-          <View style={styles.checkTextCol}>
-            <View style={styles.checkNameRow}>
-              <Text style={styles.checkName}>Ghana Card ID</Text>
-              <Text style={styles.badgePending}>NOT SUBMITTED</Text>
-            </View>
-            <Text style={styles.checkSub}>Document upload is not connected yet</Text>
-          </View>
-        </View>
-
-        {/* Step 2 */}
-        <View style={styles.checkItem}>
-          <View style={[styles.statusIconCircle, styles.iconPending]}>
-            <Text style={styles.checkClock}>⏳</Text>
-          </View>
-          <View style={styles.checkTextCol}>
-            <View style={styles.checkNameRow}>
-              <Text style={styles.checkName}>Motorbike Roadworthiness</Text>
-              <Text style={styles.badgePending}>NOT SUBMITTED</Text>
-            </View>
-            <Text style={styles.checkSub}>DVLA inspection upload is not connected yet</Text>
-          </View>
-        </View>
-
-        {/* Step 3 */}
-        <View style={styles.checkItem}>
-          <View style={[styles.statusIconCircle, styles.iconPending]}>
-            <Text style={styles.checkClock}>⏳</Text>
-          </View>
-          <View style={styles.checkTextCol}>
-            <View style={styles.checkNameRow}>
-              <Text style={styles.checkName}>Regional Command Clearance</Text>
-              <Text style={styles.badgePending}>IN REVIEW</Text>
-            </View>
-            <Text style={styles.checkSub}>Waiting for an admin to approve this account</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Actions */}
-      <View style={styles.actionsContainer}>
-        <TactileButton
-          title="Refresh Verification Status 🔄"
-          variant="primary"
-          onPress={onRefreshStatus}
-          loading={loading}
-        />
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={handleCallSupport}
-          style={styles.supportButton}
-        >
-          <Text style={styles.supportText}>Support line not connected yet</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      <Text style={styles.stepText}>{text}</Text>
+    </View>
   );
 }
 
@@ -136,159 +237,147 @@ const styles = StyleSheet.create({
   content: {
     padding: Spacing.xl,
     paddingBottom: Spacing.xxxl,
-    gap: Spacing.lg,
   },
-  heroCard: {
-    backgroundColor: Colors.card,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: Colors.amberBorder,
-    padding: Spacing.xl,
-    alignItems: 'center',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  glowBacking: {
-    position: 'absolute',
-    top: -40,
-    width: 200,
-    height: 120,
-    backgroundColor: Colors.amberAlertGlow,
-    borderRadius: 60,
-  },
-  emblemCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 2,
-    borderColor: Colors.amberAlert,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.md,
-  },
-  emblemIcon: {
-    fontSize: 36,
-  },
-  hubLocationBadge: {
-    backgroundColor: Colors.amberDark,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
-    borderRadius: Radii.pill,
-    marginBottom: Spacing.md,
-  },
-  hubLocationText: {
-    ...Typography.micro,
-    color: Colors.amberLight,
-  },
-  heroHeading: {
-    ...Typography.h2,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: Spacing.sm,
-  },
-  heroDescription: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  boldText: {
-    color: Colors.textPrimary,
-    fontWeight: '700',
-  },
-  checklistCard: {
+  hero: {
     backgroundColor: Colors.card,
     borderRadius: Radii.xl,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    padding: Spacing.xl,
+    marginTop: Spacing.md,
   },
-  checklistHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-    paddingBottom: Spacing.sm,
+  welcome: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
   },
-  checkTitle: {
+  heroTitle: {
+    ...Typography.h2,
+    color: Colors.textPrimary,
+    marginTop: Spacing.xs,
+  },
+  heroBody: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+    lineHeight: 22,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: Radii.pill,
+    backgroundColor: Colors.surfaceLight,
+    marginTop: Spacing.lg,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Colors.dispatchGreen,
+    borderRadius: Radii.pill,
+  },
+  progressText: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    marginTop: Spacing.sm,
+  },
+  loader: {
+    marginVertical: Spacing.lg,
+  },
+  errorText: {
+    ...Typography.caption,
+    color: Colors.dangerRed,
+    marginTop: Spacing.sm,
+  },
+  sectionTitle: {
     ...Typography.micro,
     color: Colors.textMuted,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.sm,
   },
-  checkProgress: {
-    ...Typography.micro,
-    color: Colors.dispatchGreen,
+  list: {
+    backgroundColor: Colors.card,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    overflow: 'hidden',
   },
-  checkItem: {
+  row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: Spacing.md,
-    paddingVertical: Spacing.xs,
+    padding: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.cardBorder,
+    minHeight: 64,
   },
-  statusIconCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+  rowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
   },
-  iconDone: {
-    backgroundColor: Colors.dispatchGreen,
-  },
-  iconPending: {
-    backgroundColor: Colors.amberDark,
-    borderWidth: 1,
-    borderColor: Colors.amberAlert,
-  },
-  checkMark: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 14,
-  },
-  checkClock: {
-    fontSize: 12,
-  },
-  checkTextCol: {
+  rowText: {
     flex: 1,
   },
-  checkNameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  checkName: {
+  rowTitle: {
     ...Typography.bodyBold,
     color: Colors.textPrimary,
   },
-  badgeDone: {
-    ...Typography.micro,
-    fontSize: 9,
-    color: Colors.dispatchGreenLight,
+  rowStatus: {
+    ...Typography.caption,
+    marginTop: 2,
   },
-  badgePending: {
-    ...Typography.micro,
-    fontSize: 9,
-    color: Colors.amberLight,
+  rowNote: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
-  checkSub: {
+  rowMeta: {
     ...Typography.caption,
     color: Colors.textMuted,
     marginTop: 2,
   },
-  actionsContainer: {
+  chevron: {
+    ...Typography.h2,
+    color: Colors.textMuted,
+  },
+  steps: {
     gap: Spacing.md,
+  },
+  step: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    alignItems: 'flex-start',
+  },
+  stepNum: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.dispatchGreenGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumText: {
+    ...Typography.caption,
+    color: Colors.dispatchGreen,
+    fontWeight: '800',
+  },
+  stepText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    flex: 1,
+    lineHeight: 22,
+  },
+  refresh: {
+    marginTop: Spacing.xl,
+  },
+  helpLink: {
+    alignSelf: 'center',
+    padding: Spacing.md,
     marginTop: Spacing.sm,
   },
-  supportButton: {
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-  },
-  supportText: {
+  helpText: {
     ...Typography.caption,
-    color: Colors.amberLight,
-    fontWeight: '600',
+    color: Colors.textMuted,
   },
 });

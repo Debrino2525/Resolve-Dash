@@ -5,16 +5,23 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Rider } from '../domain/types/rider';
+import { PhoneVerificationService } from '../verification/phone-verification.service';
 import { RiderRepository } from './rider.repository';
 
 export interface OnboardRiderDto {
   fullName: string;
+  /** Unverified, typed-in number: only honoured when REQUIRE_VERIFIED_PHONE=false. */
   phoneNumber?: string;
+  /** Proof from POST /riders/phone/verify that this account confirmed the number by SMS. */
+  phoneVerificationToken?: string;
 }
 
 @Injectable()
 export class RiderService {
-  constructor(private readonly riderRepository: RiderRepository) {}
+  constructor(
+    private readonly riderRepository: RiderRepository,
+    private readonly phoneVerification: PhoneVerificationService,
+  ) {}
 
   async onboard(
     userId: string,
@@ -27,9 +34,25 @@ export class RiderService {
       throw new BadRequestException('Full name must be at least 2 characters long');
     }
 
-    const effectivePhone = jwtPhoneNumber || dto.phoneNumber;
-    if (!effectivePhone) {
-      throw new BadRequestException('Rider must have a verified phone number or provide one');
+    // A verified phone comes from our own SMS OTP proof (mNotify), or from the JWT phone claim,
+    // which Supabase only sets after verifying the number itself (stored without '+').
+    const verifiedPhone =
+      this.phoneVerification.readProof(userId, dto.phoneVerificationToken) ??
+      toE164(jwtPhoneNumber);
+
+    let effectivePhone: string | undefined;
+    if (requireVerifiedPhone()) {
+      if (!verifiedPhone) {
+        throw new BadRequestException(
+          'Verify your phone number with the SMS code before completing onboarding',
+        );
+      }
+      effectivePhone = verifiedPhone; // a typed-in dto.phoneNumber is ignored
+    } else {
+      effectivePhone = verifiedPhone || dto.phoneNumber;
+      if (!effectivePhone) {
+        throw new BadRequestException('Rider must have a verified phone number or provide one');
+      }
     }
 
     const e164Regex = /^\+[1-9]\d{1,14}$/;
@@ -57,6 +80,12 @@ export class RiderService {
     }
   }
 
+  /** True if another rider already owns this number (checked before an SMS is sent). */
+  readonly phoneTakenByAnother = async (phone: string, userId: string): Promise<boolean> => {
+    const owner = await this.riderRepository.findRiderByPhone(phone);
+    return Boolean(owner && owner.id !== userId);
+  };
+
   async getProfile(userId: string): Promise<Rider> {
     const rider = await this.riderRepository.findRiderById(userId);
     if (!rider) {
@@ -64,6 +93,21 @@ export class RiderService {
     }
     return rider;
   }
+}
+
+/**
+ * Whether onboarding must use an SMS-verified phone from the JWT (REQUIRE_VERIFIED_PHONE,
+ * default true). Set to 'false' only while the Supabase phone/SMS provider is not configured.
+ */
+function requireVerifiedPhone(): boolean {
+  return process.env.REQUIRE_VERIFIED_PHONE !== 'false';
+}
+
+/** Supabase phone claims are digits without '+' (e.g. "233241234567"); return E.164 or undefined. */
+function toE164(phone: string | undefined): string | undefined {
+  const trimmed = phone?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.startsWith('+') ? trimmed : `+${trimmed}`;
 }
 
 /** True for a Postgres unique_violation (23505) whose constraint name mentions `column`. */

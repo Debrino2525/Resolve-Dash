@@ -1,57 +1,65 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { InlineNotice } from '../components/InlineNotice';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusTelemetryPill } from '../components/StatusTelemetryPill';
 import { TactileButton } from '../components/TactileButton';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 
+export type EmailMode = 'sign_in' | 'sign_up';
+
 export interface AuthScreenProps {
-  onAuthenticate: (
-    email: string,
-    password: string,
-    fullName: string,
-    phoneNumber: string,
-  ) => Promise<void>;
-  loading: boolean;
+  onGoogle: () => Promise<void>;
+  onEmailSubmit: (mode: EmailMode, email: string, password: string) => Promise<void>;
+  /** Which action is in flight, so only that button shows a spinner. */
+  busy: 'google' | 'email' | null;
   errorMessage: string | null;
+  /** Neutral notice, e.g. "check your inbox to confirm your email". */
+  infoMessage: string | null;
 }
 
+/**
+ * Step 1 of rider access: prove who you are (Google or email). Name and phone are collected
+ * afterwards, once, on the Complete Profile screen, so returning riders never re-enter them.
+ */
 export function AuthScreen({
-  onAuthenticate,
-  loading,
+  onGoogle,
+  onEmailSubmit,
+  busy,
   errorMessage,
+  infoMessage,
 }: AuthScreenProps): React.JSX.Element {
+  const [mode, setMode] = useState<EmailMode>('sign_in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [phoneDigits, setPhoneDigits] = useState('');
 
-  const formattedPhoneNumber = `+233${phoneDigits.replace(/^0+/, '')}`;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const isFormValid =
-    isEmailValid &&
-    password.length >= 6 &&
-    fullName.trim().length >= 2 &&
-    phoneDigits.length >= 9;
+  const isFormValid = isEmailValid && password.length >= 6;
 
-  const handleSubmit = async (): Promise<void> => {
-    if (!isFormValid) return;
+  const submitEmail = async (): Promise<void> => {
+    if (!isFormValid || busy) return;
     try {
-      await onAuthenticate(
-        email.trim(),
-        password,
-        fullName.trim(),
-        formattedPhoneNumber,
-      );
+      await onEmailSubmit(mode, email.trim(), password);
     } catch {
-      // Error handled and displayed by parent state banner
+      // Displayed by the parent's error banner
+    }
+  };
+
+  const continueWithGoogle = async (): Promise<void> => {
+    if (busy) return;
+    try {
+      await onGoogle();
+    } catch {
+      // Displayed by the parent's error banner
     }
   };
 
@@ -60,45 +68,75 @@ export function AuthScreen({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header Branding */}
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.brandContainer}>
-          <Text style={styles.brandLogo}>GhanaDash 🏍️</Text>
-          <Text style={styles.hubSubtitle}>Motorbike delivery across Ghana</Text>
+          <View style={styles.brandMark}>
+            <MaterialCommunityIcons name="moped" size={38} color={Colors.dispatchGreen} />
+          </View>
+          <Text style={styles.brandLogo}>GhanaDash</Text>
+          <Text style={styles.hubSubtitle}>Ride, deliver and earn across Ghana</Text>
         </View>
-
-        <StatusTelemetryPill
-          statusText="GHANA DISPATCH NETWORK"
-          badgeText="ONLINE"
-          variant="green"
-        />
 
         {errorMessage && (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>⚠️ {errorMessage}</Text>
+            <InlineNotice tone="error" text={errorMessage} />
+          </View>
+        )}
+        {infoMessage && (
+          <View style={styles.infoBox}>
+            <InlineNotice tone="info" text={infoMessage} />
           </View>
         )}
 
         <View style={styles.authCard}>
-          <Text style={styles.cardTitle}>Rider Dispatch Sign-In</Text>
+          <Text style={styles.cardTitle}>Sign in to ride</Text>
           <Text style={styles.cardSubtitle}>
-            Sign in or create your rider account. Instant access with zero email or SMS delays.
+            New and returning riders: continue with Google. We'll confirm your phone number by SMS
+            the first time.
           </Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>FULL LEGAL NAME (FOR GIG ID)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Kofi Mensah"
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="words"
-              value={fullName}
-              onChangeText={setFullName}
-            />
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Continue with Google"
+            activeOpacity={0.85}
+            onPress={continueWithGoogle}
+            disabled={busy !== null}
+            style={[styles.googleButton, busy !== null && styles.disabled]}
+          >
+            {busy === 'google' ? (
+              <ActivityIndicator color="#1F1F1F" />
+            ) : (
+              <>
+                <Text style={styles.googleG}>G</Text>
+                <Text style={styles.googleText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or use email</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <View style={styles.modeToggle} accessibilityRole="tablist">
+            {(['sign_in', 'sign_up'] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: mode === m }}
+                onPress={() => setMode(m)}
+                style={[styles.modeTab, mode === m && styles.modeTabActive]}
+              >
+                <Text style={[styles.modeTabText, mode === m && styles.modeTabTextActive]}>
+                  {m === 'sign_in' ? 'Sign in' : 'Create account'}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+            <Text style={styles.inputLabel}>Email address</Text>
             <TextInput
               style={styles.textInput}
               placeholder="rider@gmail.com"
@@ -106,47 +144,36 @@ export function AuthScreen({
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
               value={email}
               onChangeText={setEmail}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>PASSWORD (MIN 6 CHARACTERS)</Text>
+            <Text style={styles.inputLabel}>
+              {mode === 'sign_up' ? 'Choose a password (min. 6 characters)' : 'Password'}
+            </Text>
             <TextInput
               style={styles.textInput}
               placeholder="••••••••"
               placeholderTextColor={Colors.textMuted}
               secureTextEntry
+              autoComplete={mode === 'sign_up' ? 'new-password' : 'current-password'}
+              textContentType={mode === 'sign_up' ? 'newPassword' : 'password'}
               value={password}
               onChangeText={setPassword}
+              onSubmitEditing={submitEmail}
             />
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>MOBILE NUMBER (FOR DISPATCH & CALLS)</Text>
-            <View style={styles.phoneInputRow}>
-              <View style={styles.flagPrefix}>
-                <Text style={styles.flagText}>🇬🇭 +233</Text>
-              </View>
-              <TextInput
-                style={[styles.textInput, styles.phoneTextInput]}
-                placeholder="24 123 4567"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="phone-pad"
-                maxLength={10}
-                value={phoneDigits}
-                onChangeText={setPhoneDigits}
-              />
-            </View>
-          </View>
-
           <TactileButton
-            title="Enter Dispatch Hub ⚡"
+            title={mode === 'sign_in' ? 'Sign In' : 'Create Account'}
             variant="primary"
-            onPress={handleSubmit}
-            loading={loading}
-            disabled={!isFormValid}
+            onPress={submitEmail}
+            loading={busy === 'email'}
+            disabled={!isFormValid || busy !== null}
             style={styles.submitButton}
           />
         </View>
@@ -167,7 +194,21 @@ const styles = StyleSheet.create({
   },
   brandContainer: {
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.xl,
+  },
+  brandMark: {
+    width: 72,
+    height: 72,
+    borderRadius: Radii.xl,
+    backgroundColor: Colors.dispatchGreenGlow,
+    borderWidth: 1,
+    borderColor: Colors.dispatchGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  brandMarkIcon: {
+    fontSize: 36,
   },
   brandLogo: {
     ...Typography.h1,
@@ -175,10 +216,9 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   hubSubtitle: {
-    ...Typography.micro,
-    color: Colors.dispatchGreen,
+    ...Typography.body,
+    color: Colors.textSecondary,
     marginTop: 4,
-    textTransform: 'uppercase',
   },
   errorBox: {
     backgroundColor: Colors.dangerDark,
@@ -192,6 +232,20 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.dangerRed,
     textAlign: 'center',
+  },
+  infoBox: {
+    backgroundColor: Colors.amberDark,
+    borderColor: Colors.amberBorder,
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginVertical: Spacing.sm,
+  },
+  infoText: {
+    ...Typography.caption,
+    color: Colors.amberLight,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   authCard: {
     backgroundColor: Colors.card,
@@ -212,6 +266,69 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     lineHeight: 18,
   },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radii.lg,
+    minHeight: 54,
+    paddingHorizontal: Spacing.lg,
+  },
+  googleG: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#4285F4',
+  },
+  googleText: {
+    ...Typography.bodyBold,
+    color: '#1F1F1F',
+  },
+  disabled: {
+    opacity: 0.6,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginVertical: Spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.cardBorder,
+  },
+  dividerText: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    padding: 3,
+    marginBottom: Spacing.lg,
+  },
+  modeTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.sm,
+  },
+  modeTabActive: {
+    backgroundColor: Colors.cardHover,
+  },
+  modeTabText: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+  },
+  modeTabTextActive: {
+    color: Colors.textPrimary,
+    fontWeight: '700',
+  },
   inputGroup: {
     marginBottom: Spacing.lg,
   },
@@ -219,22 +336,6 @@ const styles = StyleSheet.create({
     ...Typography.micro,
     color: Colors.textMuted,
     marginBottom: Spacing.xs,
-  },
-  phoneInputRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  flagPrefix: {
-    backgroundColor: Colors.cardHover,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
-  },
-  flagText: {
-    ...Typography.bodyBold,
-    color: Colors.textPrimary,
   },
   textInput: {
     backgroundColor: Colors.background,
@@ -245,10 +346,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: 14,
     ...Typography.bodyBold,
-  },
-  phoneTextInput: {
-    flex: 1,
-    letterSpacing: 1.5,
   },
   submitButton: {
     marginTop: Spacing.sm,

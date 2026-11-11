@@ -83,7 +83,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontWeight: '700',
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
   },
   badge: {
     backgroundColor: 'rgba(40, 49, 66, 0.8)',

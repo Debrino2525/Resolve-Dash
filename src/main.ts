@@ -1,13 +1,26 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import * as express from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { productionEnvProblems } from './config/production-env';
 
 async function bootstrap(): Promise<void> {
+  const logger = new Logger('Bootstrap');
+
+  // Production must be fully configured: refuse to start rather than fail on the first order.
+  const problems = productionEnvProblems();
+  if (problems.length > 0) {
+    logger.error(
+      `Refusing to start: production configuration is incomplete:\n- ${problems.join('\n- ')}`,
+    );
+    process.exit(1);
+  }
+
   // rawBody: true preserves raw payload Buffer on RawBodyRequest<Request>
   // essential for HMAC SHA-512 webhook signature verification.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
@@ -22,6 +35,24 @@ async function bootstrap(): Promise<void> {
   // Security headers via Helmet
   app.use(helmet());
 
+  // The admin portal can also be served on its own hostname (e.g. ghanadash-admin.<domain>),
+  // pointing at this same server. On that host, "/" opens the portal, and the public API is
+  // not offered there, so the admin hostname can sit behind extra protection (Cloudflare Access).
+  const adminHost = process.env.ADMIN_HOST?.trim().toLowerCase();
+  if (adminHost) {
+    app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const isAdminPath = req.path === '/admin' || req.path.startsWith('/admin/');
+      if (req.hostname.toLowerCase() !== adminHost) {
+        // Portal only on its own host, so protection on that host can't be bypassed via the API.
+        if (isAdminPath) return res.status(404).json({ statusCode: 404, message: 'Not found' });
+        return next();
+      }
+      if (req.path === '/') return res.redirect(302, '/admin');
+      if (req.path === '/health' || isAdminPath) return next();
+      return res.status(404).json({ statusCode: 404, message: 'Not found' });
+    });
+  }
+
   // Sensible payload size limits to guard against DOS memory exhaustion attacks
   const maxBodySize = process.env.MAX_BODY_SIZE_BYTES
     ? parseInt(process.env.MAX_BODY_SIZE_BYTES, 10)
@@ -30,8 +61,12 @@ async function bootstrap(): Promise<void> {
   app.use(express.json({ limit: maxBodySize }));
   app.use(express.urlencoded({ extended: true, limit: maxBodySize }));
 
+  // Let the host stop the server cleanly on deploys: close the DB pool and the dispatch timer.
+  app.enableShutdownHooks();
+
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
+  logger.log(`GhanaDash API listening on port ${port} (${process.env.NODE_ENV ?? 'development'})`);
 }
 
 void bootstrap();

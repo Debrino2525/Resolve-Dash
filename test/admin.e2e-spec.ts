@@ -7,11 +7,23 @@ import { AdminAuthService } from '../src/admin/admin-auth.service';
 import { AdminController } from '../src/admin/admin.controller';
 import { AdminService } from '../src/admin/admin.service';
 import { AdminGuard } from '../src/auth/admin.guard';
+import { AdminInsightsService } from '../src/admin/admin-insights.service';
+import { RiderDocumentsService } from '../src/riders/rider-documents.service';
 import { SupabaseAuthGuard } from '../src/auth/supabase-auth.guard';
 
 describe('Admin portal E2E (auth lockdown)', () => {
   let app: INestApplication;
   let mockAdminService: jest.Mocked<AdminService>;
+  const mockInsights = {
+    getDashboard: jest.fn(),
+    getRiderDetail: jest.fn(),
+    listPayments: jest.fn(),
+  } as unknown as jest.Mocked<AdminInsightsService>;
+  const mockDocuments = {
+    getChecklistForAdmin: jest.fn(),
+    readFileForAdmin: jest.fn(),
+    review: jest.fn(),
+  } as unknown as jest.Mocked<RiderDocumentsService>;
   const TEST_SECRET = 'admin-e2e-secret-key-67890';
   const RIDER_ID = '44444444-4444-4444-4444-444444444444';
   const originalFetch = globalThis.fetch;
@@ -59,6 +71,8 @@ describe('Admin portal E2E (auth lockdown)', () => {
       controllers: [AdminController],
       providers: [
         { provide: AdminService, useValue: mockAdminService },
+        { provide: AdminInsightsService, useValue: mockInsights },
+        { provide: RiderDocumentsService, useValue: mockDocuments },
         AdminAuthService,
         SupabaseAuthGuard,
         AdminGuard,
@@ -118,6 +132,121 @@ describe('Admin portal E2E (auth lockdown)', () => {
       RIDER_ID,
       '55555555-5555-5555-5555-555555555555',
     );
+  });
+
+  describe('portal data endpoints', () => {
+    it.each(['/admin/api/dashboard', `/admin/api/riders/${RIDER_ID}`, '/admin/api/payments'])(
+      'GET %s requires an admin',
+      async (path) => {
+        await request(app.getHttpServer()).get(path).expect(401);
+        await request(app.getHttpServer())
+          .get(path)
+          .set('Authorization', `Bearer ${riderToken()}`)
+          .expect(403);
+      },
+    );
+
+    it('serves the dashboard to admins', async () => {
+      mockInsights.getDashboard.mockResolvedValue({ stats: { totalRiders: 3 } } as never);
+      const res = await request(app.getHttpServer())
+        .get('/admin/api/dashboard')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+      expect(res.body.stats.totalRiders).toBe(3);
+    });
+
+    it('passes the payment status filter through, upper-cased', async () => {
+      mockInsights.listPayments.mockResolvedValue([]);
+      await request(app.getHttpServer())
+        .get('/admin/api/payments?status=failed')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+      expect(mockInsights.listPayments).toHaveBeenCalledWith('FAILED');
+    });
+
+    it('records the reject reason', async () => {
+      mockAdminService.rejectRider.mockResolvedValue({ id: RIDER_ID } as never);
+      await request(app.getHttpServer())
+        .post(`/admin/api/riders/${RIDER_ID}/reject`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ reason: 'Ghana Card could not be verified' })
+        .expect(201);
+      expect(mockAdminService.rejectRider).toHaveBeenCalledWith(
+        RIDER_ID,
+        '55555555-5555-5555-5555-555555555555',
+        'Ghana Card could not be verified',
+      );
+    });
+
+    it('serves the portal stylesheet', async () => {
+      const res = await request(app.getHttpServer()).get('/admin/app.css').expect(200);
+      expect(res.headers['content-type']).toContain('text/css');
+    });
+  });
+
+  describe('document review endpoints', () => {
+    const DOC = '66666666-6666-6666-6666-666666666666';
+
+    it.each([
+      ['GET', `/admin/api/riders/${RIDER_ID}/documents`],
+      ['GET', `/admin/api/riders/${RIDER_ID}/documents/${DOC}/file`],
+      ['POST', `/admin/api/riders/${RIDER_ID}/documents/${DOC}/review`],
+    ])('%s %s requires an admin', async (method, path) => {
+      const server = request(app.getHttpServer());
+      const call = method === 'GET' ? server.get(path) : server.post(path);
+      await call.expect(401);
+      const asRider =
+        method === 'GET'
+          ? request(app.getHttpServer()).get(path)
+          : request(app.getHttpServer()).post(path);
+      await asRider.set('Authorization', `Bearer ${riderToken()}`).expect(403);
+    });
+
+    it("streams a document file using the admin's own token", async () => {
+      mockDocuments.readFileForAdmin.mockResolvedValue({
+        body: Buffer.from([0xff, 0xd8, 0xff]),
+        contentType: 'image/jpeg',
+      });
+      const token = adminToken();
+      const res = await request(app.getHttpServer())
+        .get(`/admin/api/riders/${RIDER_ID}/documents/${DOC}/file`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.headers['content-type']).toBe('image/jpeg');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(mockDocuments.readFileForAdmin).toHaveBeenCalledWith(RIDER_ID, DOC, token);
+    });
+
+    it('validates the review decision', async () => {
+      await request(app.getHttpServer())
+        .post(`/admin/api/riders/${RIDER_ID}/documents/${DOC}/review`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ decision: 'MAYBE' })
+        .expect(400);
+      expect(mockDocuments.review).not.toHaveBeenCalled();
+    });
+
+    it('passes the reviewing admin id through', async () => {
+      mockDocuments.review.mockResolvedValue({
+        items: [],
+        submittedCount: 0,
+        approvedCount: 0,
+        requiredCount: 4,
+      });
+      await request(app.getHttpServer())
+        .post(`/admin/api/riders/${RIDER_ID}/documents/${DOC}/review`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ decision: 'REJECTED', note: 'Blurry photo' })
+        .expect(200);
+      expect(mockDocuments.review).toHaveBeenCalledWith(
+        RIDER_ID,
+        DOC,
+        'REJECTED',
+        'Blurry photo',
+        '55555555-5555-5555-5555-555555555555',
+      );
+    });
   });
 
   it('rejects non-UUID rider ids with 400', async () => {

@@ -1,120 +1,145 @@
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Colors, Radii, Spacing, Typography } from '../theme/theme';
-import { TactileButton } from './TactileButton';
-
-export interface IncomingOrderData {
-  orderId: string;
-  fareGHS: string;
-  pickupName: string;
-  pickupDistance: string;
-  dropoffName: string;
-  dropoffDistance: string;
-  packageType: string;
-}
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatDuration } from '../services/routing';
+import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
+import { cedis, PACKAGE_LABEL, RiderOffer } from '../types/dispatch';
+import { formatDistance } from '../utils/geo';
 
 export interface IncomingOrderSheetProps {
-  order: IncomingOrderData;
+  offer: RiderOffer;
   onAccept: () => void;
   onDecline: () => void;
+  busy: boolean;
 }
 
+/** Live order offer. Counts down to the server's expiry; dispatch moves on when it runs out. */
 export function IncomingOrderSheet({
-  order,
+  offer,
   onAccept,
   onDecline,
+  busy,
 }: IncomingOrderSheetProps): React.JSX.Element {
-  const [timeLeft, setTimeLeft] = useState(15);
+  const insets = useSafeAreaInsets();
+  const secondsLeft = (): number =>
+    Math.max(0, Math.ceil((new Date(offer.expiresAt).getTime() - Date.now()) / 1000));
+  const [left, setLeft] = useState(secondsLeft);
 
   useEffect(() => {
-    if (timeLeft <= 0) {
-      onDecline();
-      return;
-    }
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => prev - 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft, onDecline]);
+    setLeft(secondsLeft());
+    const t = setInterval(() => setLeft(secondsLeft()), 500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offer.id]);
 
   return (
-    <View style={styles.sheetOverlay}>
-      <View style={styles.sheetContainer}>
-        {/* Timer Bar */}
-        <View style={styles.headerBar}>
-          <View style={styles.badgeRadar}>
-            <View style={styles.radarDot} />
-            <Text style={styles.radarText}>INCOMING DISPATCH OFFER</Text>
+    <View style={styles.overlay}>
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.lg }]}>
+        <View style={styles.headerRow}>
+          <View style={styles.live}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>New delivery request</Text>
           </View>
-          <View style={styles.timerBadge}>
-            <Text style={styles.timerText}>{timeLeft}s</Text>
-          </View>
-        </View>
-
-        {/* Fare Callout */}
-        <View style={styles.fareContainer}>
-          <Text style={styles.fareLabel}>ESTIMATED EARNINGS</Text>
-          <Text style={styles.fareAmount}>{order.fareGHS}</Text>
-          <Text style={styles.packageBadge}>{order.packageType}</Text>
-        </View>
-
-        {/* Route Details */}
-        <View style={styles.routeContainer}>
-          {/* Pickup */}
-          <View style={styles.routeItem}>
-            <View style={[styles.nodeIndicator, styles.pickupNode]} />
-            <View style={styles.routeTextContainer}>
-              <Text style={styles.routeNodeLabel}>PICKUP ({order.pickupDistance})</Text>
-              <Text style={styles.routeName}>{order.pickupName}</Text>
-            </View>
-          </View>
-
-          {/* Dotted Line */}
-          <View style={styles.routeLine} />
-
-          {/* Dropoff */}
-          <View style={styles.routeItem}>
-            <View style={[styles.nodeIndicator, styles.dropoffNode]} />
-            <View style={styles.routeTextContainer}>
-              <Text style={styles.routeNodeLabel}>DROPOFF ({order.dropoffDistance})</Text>
-              <Text style={styles.routeName}>{order.dropoffName}</Text>
-            </View>
+          <View style={[styles.timer, left <= 5 && styles.timerUrgent]}>
+            <Text style={[styles.timerText, left <= 5 && { color: Colors.dangerRed }]}>{left}s</Text>
           </View>
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionsRow}>
-          <TactileButton
-            title="Decline"
-            variant="secondary"
+        <View style={styles.fareRow}>
+          <View>
+            <Text style={styles.fare}>{cedis(offer.farePesewas)}</Text>
+            <Text style={styles.fareSub}>Collect in cash at drop-off</Text>
+          </View>
+          <View style={styles.chips}>
+            <Text style={styles.chip}>{PACKAGE_LABEL[offer.packageType]}</Text>
+            {offer.fragile && <Text style={[styles.chip, styles.chipWarn]}>Fragile</Text>}
+          </View>
+        </View>
+
+        <View style={styles.route}>
+          <Stop
+            icon="cube"
+            color={Colors.dispatchGreen}
+            label={`Pickup · ${formatDistance(offer.distanceToPickupMeters)} from you`}
+            address={offer.pickup.address}
+            landmark={offer.pickup.landmark}
+          />
+          <View style={styles.connector} />
+          <Stop
+            icon="flag"
+            color={Colors.harborBlue}
+            label={`Drop-off · ${formatDistance(offer.distanceMeters)} trip, ~${formatDuration(offer.durationSeconds)}`}
+            address={offer.dropoff.address}
+            landmark={offer.dropoff.landmark}
+          />
+        </View>
+
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.btn, styles.decline]}
             onPress={onDecline}
-            style={styles.declineButton}
-            textStyle={styles.declineText}
-          />
-          <TactileButton
-            title="Accept Order ⚡"
-            variant="primary"
+            disabled={busy}
+            accessibilityRole="button"
+          >
+            <Text style={styles.declineText}>Decline</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.accept, busy && { opacity: 0.6 }]}
             onPress={onAccept}
-            style={styles.acceptButton}
-          />
+            disabled={busy || left === 0}
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="moped" size={22} color={Colors.onBrand} />
+            <Text style={styles.acceptText}>{busy ? 'Accepting…' : 'Accept'}</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
   );
 }
 
+function Stop({
+  icon,
+  color,
+  label,
+  address,
+  landmark,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  color: string;
+  label: string;
+  address: string;
+  landmark: string | null;
+}): React.JSX.Element {
+  return (
+    <View style={styles.stop}>
+      <View style={[styles.stopIcon, { backgroundColor: `${color}22` }]}>
+        <Ionicons name={icon} size={16} color={color} />
+      </View>
+      <View style={styles.stopText}>
+        <Text style={styles.stopLabel}>{label}</Text>
+        <Text style={styles.stopAddress} numberOfLines={2}>
+          {address}
+        </Text>
+        {landmark ? (
+          <Text style={styles.stopLandmark} numberOfLines={1}>
+            {landmark}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  sheetOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    top: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  overlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: Colors.overlay,
     justifyContent: 'flex-end',
     zIndex: 999,
   },
-  sheetContainer: {
+  sheet: {
     backgroundColor: Colors.card,
     borderTopLeftRadius: Radii.xl,
     borderTopRightRadius: Radii.xl,
@@ -122,116 +147,56 @@ const styles = StyleSheet.create({
     borderColor: Colors.dispatchGreen,
     padding: Spacing.xl,
     gap: Spacing.lg,
+    ...Elevation.sheet,
   },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  badgeRadar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  radarDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.dispatchGreen,
-  },
-  radarText: {
-    ...Typography.micro,
-    color: Colors.dispatchGreen,
-  },
-  timerBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 109, 0, 0.2)',
-    borderWidth: 1.5,
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  live: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.dispatchGreen },
+  liveText: { ...Typography.bodyBold, color: Colors.dispatchGreen },
+  timer: {
+    minWidth: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
     borderColor: Colors.amberAlert,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  timerText: {
-    ...Typography.bodyBold,
-    color: Colors.amberAlert,
-  },
-  fareContainer: {
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-  },
-  fareLabel: {
-    ...Typography.micro,
-    color: Colors.textMuted,
-    marginBottom: 4,
-  },
-  fareAmount: {
-    ...Typography.statHero,
-    color: Colors.dispatchGreen,
-  },
-  packageBadge: {
+  timerUrgent: { borderColor: Colors.dangerRed },
+  timerText: { ...Typography.h3, color: Colors.amberAlert },
+  fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  fare: { ...Typography.display, color: Colors.textPrimary },
+  fareSub: { ...Typography.caption, color: Colors.textSecondary },
+  chips: { alignItems: 'flex-end', gap: 6 },
+  chip: {
     ...Typography.micro,
     color: Colors.textSecondary,
-    backgroundColor: Colors.cardHover,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 4,
-    borderRadius: Radii.pill,
-    marginTop: Spacing.xs,
-  },
-  routeContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: Radii.lg,
-    padding: Spacing.lg,
-  },
-  routeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  nodeIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  pickupNode: {
-    backgroundColor: Colors.dispatchGreen,
-  },
-  dropoffNode: {
-    backgroundColor: Colors.amberAlert,
-  },
-  routeLine: {
-    width: 2,
-    height: 24,
-    backgroundColor: Colors.cardBorder,
-    marginLeft: 5,
-    marginVertical: 4,
-  },
-  routeTextContainer: {
-    flex: 1,
-  },
-  routeNodeLabel: {
-    ...Typography.micro,
-    color: Colors.textMuted,
-  },
-  routeName: {
-    ...Typography.bodyBold,
-    color: Colors.textPrimary,
-    marginTop: 2,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  declineButton: {
-    flex: 1,
     backgroundColor: Colors.surfaceLight,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 5,
+    borderRadius: Radii.pill,
+    overflow: 'hidden',
   },
-  declineText: {
-    color: Colors.textMuted,
+  chipWarn: { color: Colors.amberLight, backgroundColor: Colors.amberDark },
+  route: { backgroundColor: Colors.background, borderRadius: Radii.lg, padding: Spacing.lg },
+  stop: { flexDirection: 'row', gap: Spacing.md },
+  stopIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  stopText: { flex: 1 },
+  stopLabel: { ...Typography.caption, color: Colors.textMuted },
+  stopAddress: { ...Typography.bodyBold, color: Colors.textPrimary },
+  stopLandmark: { ...Typography.caption, color: Colors.textSecondary },
+  connector: { width: 2, height: 18, backgroundColor: Colors.cardBorder, marginLeft: 15, marginVertical: 4 },
+  actions: { flexDirection: 'row', gap: Spacing.md },
+  btn: {
+    minHeight: 56,
+    borderRadius: Radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
-  acceptButton: {
-    flex: 2,
-  },
+  decline: { flex: 1, backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.cardBorder },
+  declineText: { ...Typography.bodyBold, color: Colors.textSecondary },
+  accept: { flex: 2, backgroundColor: Colors.dispatchGreen },
+  acceptText: { ...Typography.h3, color: Colors.onBrand },
 });

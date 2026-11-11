@@ -4,7 +4,7 @@
     "slug": "ghanadash-rider",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "scheme": "ghanadash-rider",
     "ios": {
       "supportsTablet": false,
@@ -16,8 +16,12 @@
       },
       "package": "com.ghanadash.rider",
       "permissions": [
+        "CAMERA",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "ACCESS_BACKGROUND_LOCATION"
       ]
     },
     "extra": {
@@ -26,7 +30,24 @@
       }
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GhanaDash needs your photos so you can upload your Ghana Card, licence, roadworthy and insurance documents for verification.",
+          "cameraPermission": "GhanaDash uses the camera so you can photograph your Ghana Card, licence, roadworthy and insurance documents for verification.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "GhanaDash shows your position on the map and guides you to pickups and drop-offs while you are on duty.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false
+        }
+      ],
+      "expo-secure-store"
     ]
   }
 }

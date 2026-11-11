@@ -24,21 +24,21 @@ const errors: string[] = [];
 // closing the EXCEPTION block itself — that is the bug.  END; (bare) closes
 // the EXCEPTION block correctly.
 // ---------------------------------------------------------------------------
-let inExceptionBlock  = false;
+let inExceptionBlock = false;
 let exceptionOpenLine = -1;
-let ifDepthInBlock    = 0;
+let ifDepthInBlock = 0;
 
 for (let i = 0; i < lines.length; i++) {
   // Strip inline comments and trailing whitespace, uppercase for matching
-  const raw   = lines[i].replace(/--.*$/, '').trim();
+  const raw = lines[i].replace(/--.*$/, '').trim();
   const upper = raw.toUpperCase();
 
   if (!inExceptionBlock) {
     // Entering an EXCEPTION handler (the EXCEPTION keyword that follows BEGIN)
     if (/^EXCEPTION\b/.test(upper)) {
-      inExceptionBlock  = true;
-      exceptionOpenLine = i + 1;  // 1-based line number
-      ifDepthInBlock    = 0;
+      inExceptionBlock = true;
+      exceptionOpenLine = i + 1; // 1-based line number
+      ifDepthInBlock = 0;
     }
   } else {
     // Track nested IF statements inside the exception handler
@@ -50,12 +50,12 @@ for (let i = 0; i < lines.length; i++) {
     // END IF; closes the innermost IF
     if (/^END\s+IF\s*;/.test(upper)) {
       if (ifDepthInBlock > 0) {
-        ifDepthInBlock--;   // closes a nested IF inside the handler — OK
+        ifDepthInBlock--; // closes a nested IF inside the handler — OK
       } else {
         // No open IF to close: this END IF; is trying to close the EXCEPTION block
         errors.push(
           `Line ${i + 1}: END IF; closes the EXCEPTION block opened at line ${exceptionOpenLine}. ` +
-          `Use END; to close a BEGIN/EXCEPTION block.`
+            `Use END; to close a BEGIN/EXCEPTION block.`,
         );
         inExceptionBlock = false;
       }
@@ -79,8 +79,8 @@ for (let i = 0; i < lines.length; i++) {
 // Simplest correct approach: check BEGIN/END using the state BEFORE the toggle
 // on the current line, then apply toggles.
 // ---------------------------------------------------------------------------
-let inDoBody    = false;
-let beginDepth  = 0;
+let inDoBody = false;
+let beginDepth = 0;
 let beginLines: number[] = [];
 
 for (let i = 0; i < lines.length; i++) {
@@ -118,7 +118,7 @@ for (let i = 0; i < lines.length; i++) {
 if (beginDepth !== 0) {
   errors.push(
     `Unbalanced BEGIN/END inside DO body. Net unclosed depth: ${beginDepth}. ` +
-    `Unclosed BEGIN lines: ${beginLines.join(', ')}`
+      `Unclosed BEGIN lines: ${beginLines.join(', ')}`,
   );
 }
 
@@ -128,11 +128,11 @@ if (beginDepth !== 0) {
 if (errors.length === 0) {
   console.log(
     '✅  SQL syntax validation PASSED:\n' +
-    '    • No END IF; found closing a BEGIN/EXCEPTION block\n' +
-    '    • BEGIN/END blocks are balanced'
+      '    • No END IF; found closing a BEGIN/EXCEPTION block\n' +
+      '    • BEGIN/END blocks are balanced',
   );
 } else {
   console.error('❌  SQL syntax validation FAILED:');
-  errors.forEach(e => console.error('   ', e));
+  errors.forEach((e) => console.error('   ', e));
   process.exit(1);
 }

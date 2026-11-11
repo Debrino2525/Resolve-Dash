@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import { RIDER_DOCUMENT_TYPES } from '../domain/types/document';
 import { computeSubscriptionState } from '../subscriptions/subscription-state';
 import { AdminRiderOverview, AdminStats } from './admin.types';
 
@@ -8,13 +9,19 @@ interface RawAdminRiderRow {
   id: string;
   phone_number: string;
   full_name: string;
+  email: string | null;
   onboarding_status: 'PENDING_VERIFICATION' | 'ACTIVE' | 'REJECTED';
   has_subscription: boolean;
   trial_ends_at: string | Date | null;
   paid_until: string | Date | null;
   grace_ends_at: string | Date | null;
   created_at: string | Date;
+  documents_submitted: number;
+  documents_approved: number;
 }
+
+/** Number of compliance documents a rider must have APPROVED before activation. */
+export const REQUIRED_DOCUMENT_COUNT = RIDER_DOCUMENT_TYPES.length;
 
 const toDate = (v: string | Date | null): Date | null => (v ? new Date(v) : null);
 
@@ -36,14 +43,24 @@ export class AdminService {
          r.id,
          r.phone_number,
          r.full_name,
+         r.email,
          r.onboarding_status,
          r.created_at,
          (s.id IS NOT NULL) AS has_subscription,
          s.trial_ends_at,
          s.paid_until,
-         s.grace_ends_at
+         s.grace_ends_at,
+         COALESCE(d.submitted, 0)::int AS documents_submitted,
+         COALESCE(d.approved, 0)::int AS documents_approved
        FROM riders r
        LEFT JOIN subscriptions s ON r.id = s.rider_id
+       LEFT JOIN (
+         SELECT rider_id,
+                COUNT(*) AS submitted,
+                COUNT(*) FILTER (WHERE status = 'APPROVED') AS approved
+         FROM rider_documents
+         GROUP BY rider_id
+       ) d ON d.rider_id = r.id
        ${riderId ? 'WHERE r.id = $1' : ''}
        ORDER BY r.created_at DESC`,
       riderId ? [riderId] : [],
@@ -67,11 +84,15 @@ export class AdminService {
         id: row.id,
         phoneNumber: row.phone_number,
         fullName: row.full_name,
+        email: row.email,
         onboardingStatus: row.onboarding_status,
         subscriptionStatus: state?.effectiveStatus ?? 'NONE',
         paidUntil: paidUntil ? paidUntil.toISOString() : null,
         graceEndsAt: state?.graceEndsAt ? state.graceEndsAt.toISOString() : null,
         createdAt: new Date(row.created_at).toISOString(),
+        documentsSubmitted: Number(row.documents_submitted),
+        documentsApproved: Number(row.documents_approved),
+        documentsRequired: REQUIRED_DOCUMENT_COUNT,
       };
     });
   }
@@ -91,6 +112,19 @@ export class AdminService {
       }
 
       if (status === 'PENDING_VERIFICATION') {
+        // Identity, licence, roadworthiness and insurance must all be checked first.
+        const docs = await client.query<{ approved: number }>(
+          `SELECT COUNT(*)::int AS approved FROM rider_documents
+           WHERE rider_id = $1 AND status = 'APPROVED'`,
+          [riderId],
+        );
+        const approved = Number(docs.rows[0]?.approved ?? 0);
+        if (approved < REQUIRED_DOCUMENT_COUNT) {
+          throw new ConflictException(
+            `Approve all ${REQUIRED_DOCUMENT_COUNT} documents before approving this rider (${approved}/${REQUIRED_DOCUMENT_COUNT} approved).`,
+          );
+        }
+
         await client.query(
           `UPDATE riders SET onboarding_status = 'ACTIVE', updated_at = NOW() WHERE id = $1`,
           [riderId],
@@ -162,7 +196,11 @@ export class AdminService {
     return this.requireOverview(riderId);
   }
 
-  async rejectRider(riderId: string, adminId: string): Promise<AdminRiderOverview> {
+  async rejectRider(
+    riderId: string,
+    adminId: string,
+    reason?: string,
+  ): Promise<AdminRiderOverview> {
     await this.db.withTransaction(async (client) => {
       const status = await lockRiderStatus(client, riderId);
       if (status === 'REJECTED') {
@@ -175,7 +213,7 @@ export class AdminService {
       await client.query(
         `INSERT INTO rider_approval_events (rider_id, action, admin_id, reason)
          VALUES ($1, 'REJECTED', $2, $3)`,
-        [riderId, adminId, `Rejected via admin dashboard (was ${status})`],
+        [riderId, adminId, reason?.trim() || `Rejected via admin dashboard (was ${status})`],
       );
     });
 
@@ -186,6 +224,7 @@ export class AdminService {
     riderId: string,
     days: number,
     adminId: string,
+    note?: string,
   ): Promise<AdminRiderOverview> {
     await this.db.withTransaction(async (client) => {
       await lockRiderStatus(client, riderId);
@@ -216,7 +255,7 @@ export class AdminService {
           upserted.rows[0].id,
           riderId,
           before.rows[0]?.status ?? null,
-          `Admin granted ${days} days of free dispatch access`,
+          note?.trim() || `Admin granted ${days} days of free dispatch access`,
           adminActor(adminId),
           JSON.stringify({ days, paidUntil: new Date(upserted.rows[0].paid_until).toISOString() }),
         ],

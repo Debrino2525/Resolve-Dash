@@ -6,6 +6,8 @@ import { AdminAuthService } from '../src/admin/admin-auth.service';
 import { AdminController } from '../src/admin/admin.controller';
 import { AdminService } from '../src/admin/admin.service';
 import { AdminGuard } from '../src/auth/admin.guard';
+import { AdminInsightsService } from '../src/admin/admin-insights.service';
+import { RiderDocumentsService } from '../src/riders/rider-documents.service';
 import { SupabaseAuthGuard } from '../src/auth/supabase-auth.guard';
 import { SubscriptionService } from '../src/subscriptions/subscription.service';
 import { WebhooksController } from '../src/webhooks/webhooks.controller';
@@ -28,6 +30,8 @@ describe('Rate limiting E2E', () => {
       controllers: [AdminController, WebhooksController],
       providers: [
         { provide: AdminService, useValue: {} },
+        { provide: AdminInsightsService, useValue: {} },
+        { provide: RiderDocumentsService, useValue: {} },
         { provide: SubscriptionService, useValue: { handleWebhook } },
         { provide: APP_GUARD, useClass: ThrottlerGuard },
         AdminAuthService,

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhanaDash Admin</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/admin/app.css">
+</head>
+<body>
+  <!-- Sign-in -->
+  <main id="login-view" class="login" hidden>
+    <form class="login-card" id="login-form" autocomplete="on">
+      <div class="brand brand-lg">
+        <span class="brand-mark" aria-hidden="true">GD</span>
+        <span>GhanaDash <small>Admin</small></span>
+      </div>
+      <h1>Sign in</h1>
+      <p class="muted">Admin access only. Every action is recorded against your account.</p>
+      <label class="field">
+        <span>Email</span>
+        <input id="login-email" type="email" required autocomplete="username" placeholder="you@company.com">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input id="login-password" type="password" required autocomplete="current-password">
+      </label>
+      <button class="btn btn-primary btn-block" type="submit" id="login-submit">Sign in</button>
+      <p class="form-error" id="login-error" role="alert"></p>
+    </form>
+  </main>
+
+  <!-- App shell -->
+  <div id="app" class="shell" hidden>
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">GD</span>
+        <span>GhanaDash <small>Admin</small></span>
+      </div>
+      <nav class="nav">
+        <a href="#/overview" data-route="overview"><span class="ico" data-icon="grid"></span>Overview</a>
+        <a href="#/queue" data-route="queue"><span class="ico" data-icon="shield"></span>Verification queue <span class="count" id="nav-queue-count" hidden></span></a>
+        <a href="#/riders" data-route="riders"><span class="ico" data-icon="users"></span>Riders</a>
+        <a href="#/payments" data-route="payments"><span class="ico" data-icon="card"></span>Payments</a>
+        <div class="nav-label">Coming soon</div>
+        <span class="nav-disabled"><span class="ico" data-icon="box"></span>Deliveries <span class="soon">Soon</span></span>
+        <span class="nav-disabled"><span class="ico" data-icon="user"></span>Customers <span class="soon">Soon</span></span>
+        <span class="nav-disabled"><span class="ico" data-icon="map"></span>Live map <span class="soon">Soon</span></span>
+      </nav>
+      <div class="sidebar-foot muted">v1 · Ghana</div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn only-mobile" data-action="toggle-sidebar" aria-label="Open menu"><span class="ico" data-icon="menu"></span></button>
+        <div class="search">
+          <span class="ico" data-icon="search"></span>
+          <input id="global-search" type="search" placeholder="Search riders by name, phone or email" aria-label="Search riders">
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn" data-action="refresh" aria-label="Refresh"><span class="ico" data-icon="refresh"></span></button>
+          <button class="icon-btn" data-action="toggle-theme" aria-label="Toggle light or dark theme"><span class="ico" data-icon="sun" id="theme-icon"></span></button>
+          <div class="menu-wrap">
+            <button class="avatar-btn" data-action="toggle-menu" aria-haspopup="true" aria-expanded="false" id="avatar-btn">
+              <span class="avatar" id="admin-initials">A</span>
+            </button>
+            <div class="menu" id="admin-menu" hidden>
+              <div class="menu-head">
+                <strong>Signed in as</strong>
+                <span id="admin-email" class="muted"></span>
+              </div>
+              <button class="menu-item danger" data-action="logout"><span class="ico" data-icon="logout"></span>Sign out</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="content" id="content" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <!-- Confirm / reason dialog -->
+  <dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title">
+    <form method="dialog" id="confirm-form">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-body" class="muted"></p>
+      <label class="field" id="confirm-reason-wrap" hidden>
+        <span id="confirm-reason-label">Reason</span>
+        <textarea id="confirm-reason" rows="3" maxlength="500"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel" type="submit">Cancel</button>
+        <button class="btn btn-primary" value="ok" type="submit" id="confirm-ok">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Image viewer -->
+  <dialog id="viewer" class="viewer" aria-label="Document viewer">
+    <button class="icon-btn viewer-close" data-action="close-viewer" aria-label="Close"><span class="ico" data-icon="close"></span></button>
+    <img id="viewer-img" alt="">
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="/admin/app.js" defer></script>
+</body>
+</html>

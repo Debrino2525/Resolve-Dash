@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+.git
+.claude
+rider-app
+customer-app
+site
+supabase
+test
+scripts
+*.log

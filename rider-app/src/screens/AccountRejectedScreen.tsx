@@ -1,7 +1,9 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusTelemetryPill } from '../components/StatusTelemetryPill';
 import { TactileButton } from '../components/TactileButton';
+import { SUPPORT } from '../config/support';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 
 export interface AccountRejectedScreenProps {
@@ -24,29 +26,41 @@ export function AccountRejectedScreen({
 }: AccountRejectedScreenProps): React.JSX.Element {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <StatusTelemetryPill statusText="APPLICATION NOT APPROVED" badgeText="GHANA" variant="red" />
+      <StatusTelemetryPill statusText="Application not approved" badgeText="GHANA" variant="red" />
 
       <View style={styles.card}>
-        <Text style={styles.icon}>⛔</Text>
+        <Ionicons name="close-circle" size={44} color={Colors.dangerRed} />
         <Text style={styles.heading}>Your rider application was not approved</Text>
         <Text style={styles.body}>
           Sorry, <Text style={styles.bold}>{riderName}</Text>. A GhanaDash admin reviewed your
           account and did not approve it for dispatch, so you can't go on duty or receive orders.
         </Text>
         <Text style={styles.body}>
-          If you think this is a mistake, contact GhanaDash operations. If an admin reverses the
-          decision, tap Refresh below.
+          If you think this is a mistake, contact GhanaDash support on {SUPPORT.phoneDisplay} or{' '}
+          {SUPPORT.email}. If the decision is reversed, tap Refresh below.
         </Text>
       </View>
 
       <View style={styles.actions}>
         <TactileButton
-          title="Refresh Status 🔄"
+          title={`Call support · ${SUPPORT.phoneDisplay}`}
+          variant="primary"
+          onPress={() => void Linking.openURL(`tel:${SUPPORT.phoneDial}`)}
+        />
+        <TactileButton
+          title="Email support"
+          variant="secondary"
+          onPress={() =>
+            void Linking.openURL(`mailto:${SUPPORT.email}?subject=GhanaDash%20application%20review`)
+          }
+        />
+        <TactileButton
+          title="Refresh status"
           variant="secondary"
           onPress={onRefreshStatus}
           loading={loading}
         />
-        <TactileButton title="Sign Out" variant="danger" onPress={onSignOut} />
+        <TactileButton title="Sign out" variant="danger" onPress={onSignOut} />
       </View>
     </ScrollView>
   );

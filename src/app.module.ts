@@ -4,8 +4,11 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
+import { CustomersModule } from './customers/customers.module';
 import { throttleLimit, throttleTtlMs } from './common/throttle.config';
 import { DatabaseModule } from './database/database.module';
+import { HealthController } from './health/health.controller';
+import { OrdersModule } from './orders/orders.module';
 import { RidersModule } from './riders/riders.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -22,8 +25,10 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     SubscriptionsModule,
     WebhooksModule,
     AdminModule,
+    CustomersModule,
+    OrdersModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

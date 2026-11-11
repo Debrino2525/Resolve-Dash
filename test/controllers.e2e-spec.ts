@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import request from 'supertest';
 import { SupabaseAuthGuard } from '../src/auth/supabase-auth.guard';
 import { Rider } from '../src/domain/types/rider';
+import { PhoneVerificationService } from '../src/verification/phone-verification.service';
 import { RiderController } from '../src/riders/rider.controller';
 import { RiderService } from '../src/riders/rider.service';
 import { SubscriptionController } from '../src/subscriptions/subscription.controller';
@@ -14,6 +15,10 @@ describe('Controllers E2E Integration', () => {
   let app: INestApplication;
   let mockRiderService: jest.Mocked<RiderService>;
   let mockSubscriptionService: jest.Mocked<SubscriptionService>;
+  const mockPhoneVerification = {
+    sendCode: jest.fn(),
+    verifyCode: jest.fn(),
+  } as unknown as jest.Mocked<PhoneVerificationService>;
   const TEST_SECRET = 'e2e-test-secret-key-12345';
 
   const MOCK_USER = {
@@ -47,6 +52,7 @@ describe('Controllers E2E Integration', () => {
     mockRiderService = {
       onboard: jest.fn(),
       getProfile: jest.fn(),
+      phoneTakenByAnother: jest.fn(),
     } as unknown as jest.Mocked<RiderService>;
 
     mockSubscriptionService = {
@@ -60,6 +66,7 @@ describe('Controllers E2E Integration', () => {
       providers: [
         { provide: RiderService, useValue: mockRiderService },
         { provide: SubscriptionService, useValue: mockSubscriptionService },
+        { provide: PhoneVerificationService, useValue: mockPhoneVerification },
         SupabaseAuthGuard,
       ],
     })
@@ -108,6 +115,59 @@ describe('Controllers E2E Integration', () => {
         onboardingStatus: 'PENDING_VERIFICATION',
         createdAt: '2026-11-09T10:00:00.000Z',
       });
+    });
+  });
+
+  describe('POST /riders/phone/*', () => {
+    it('requires authentication', async () => {
+      await request(app.getHttpServer())
+        .post('/riders/phone/send-code')
+        .send({ phoneNumber: '+233241234567' })
+        .expect(401);
+    });
+
+    it('sends a code for the signed-in user', async () => {
+      mockPhoneVerification.sendCode.mockResolvedValue({
+        verificationId: 'a'.repeat(32),
+        phoneNumber: '+233241234567',
+        expiresAt: new Date().toISOString(),
+        resendAfterSeconds: 30,
+      });
+      const res = await request(app.getHttpServer())
+        .post('/riders/phone/send-code')
+        .set('Authorization', `Bearer ${createTestJwt()}`)
+        .send({ phoneNumber: '+233241234567' })
+        .expect(200);
+
+      expect(mockPhoneVerification.sendCode).toHaveBeenCalledWith(
+        MOCK_USER.id,
+        '+233241234567',
+        undefined,
+        mockRiderService.phoneTakenByAnother,
+      );
+      expect(res.body.verificationId).toBe('a'.repeat(32));
+    });
+
+    it('validates the verify payload before touching the service', async () => {
+      await request(app.getHttpServer())
+        .post('/riders/phone/verify')
+        .set('Authorization', `Bearer ${createTestJwt()}`)
+        .send({ verificationId: 'a'.repeat(32), code: '12ab' })
+        .expect(400);
+      expect(mockPhoneVerification.verifyCode).not.toHaveBeenCalled();
+    });
+
+    it('returns the proof for a correct code', async () => {
+      mockPhoneVerification.verifyCode.mockReturnValue({
+        phoneNumber: '+233241234567',
+        phoneVerificationToken: 'proof',
+      });
+      const res = await request(app.getHttpServer())
+        .post('/riders/phone/verify')
+        .set('Authorization', `Bearer ${createTestJwt()}`)
+        .send({ verificationId: 'a'.repeat(32), code: '123456' })
+        .expect(200);
+      expect(res.body.phoneVerificationToken).toBe('proof');
     });
   });
 
