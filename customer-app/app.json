@@ -64,7 +64,7 @@
         {
           "photosPermission": "GhanaDash uses your photos so you can show the rider your package or the pickup spot.",
           "cameraPermission": "GhanaDash uses the camera so you can photograph your package or the pickup spot for the rider.",
-          "microphonePermission": false
+          "microphonePermission": "GhanaDash uses the microphone only during in-app calls between a customer and their rider."
         }
       ],
       [

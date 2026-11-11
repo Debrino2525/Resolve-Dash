@@ -52,7 +52,7 @@
         {
           "photosPermission": "GhanaDash needs your photos to upload your rider documents and to send delivery photos in chat.",
           "cameraPermission": "GhanaDash uses the camera for your rider documents and for delivery photos in chat.",
-          "microphonePermission": false
+          "microphonePermission": "GhanaDash uses the microphone only during in-app calls between a customer and their rider."
         }
       ],
       [
