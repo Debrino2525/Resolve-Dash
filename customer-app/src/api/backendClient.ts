@@ -199,13 +199,16 @@ export interface ServerPlaceSuggestion {
   placeId: string;
   title: string;
   subtitle: string;
+  /** Sent by OpenStreetMap search (no details lookup needed). */
+  lat?: number;
+  lng?: number;
 }
 
 export const placesAutocomplete = (
   q: string,
   session: string,
   near: Point | null,
-): Promise<{ enabled: boolean; suggestions: ServerPlaceSuggestion[] }> => {
+): Promise<{ enabled: boolean; provider?: 'google' | 'osm'; suggestions: ServerPlaceSuggestion[] }> => {
   const params = new URLSearchParams({ q, session });
   if (near) {
     params.set('lat', near.lat.toFixed(4));

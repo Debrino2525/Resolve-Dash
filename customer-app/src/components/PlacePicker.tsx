@@ -212,6 +212,11 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
                   </Text>
                 ) : undefined
               }
+              ListFooterComponent={
+                results[0]?.source === 'osm' ? (
+                  <Text style={styles.attribution}>Places © OpenStreetMap contributors</Text>
+                ) : undefined
+              }
               ListEmptyComponent={
                 query.trim().length >= 2 && !searching ? (
                   <Text style={styles.empty}>No matches. Try the area or town name, or choose the spot on the map.</Text>
@@ -333,6 +338,12 @@ const styles = StyleSheet.create({
   optionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   optionText: { ...Typography.bodyBold, color: Colors.textPrimary },
   optionSub: { ...Typography.caption, color: Colors.textMuted },
+  attribution: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
   areaNote: {
     ...Typography.caption,
     color: Colors.amberLight,

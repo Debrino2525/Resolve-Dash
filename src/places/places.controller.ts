@@ -2,7 +2,7 @@ import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/
 import { Throttle } from '@nestjs/throttler';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { throttleTtlMs } from '../common/throttle.config';
-import { PlaceDetails, PlaceSuggestion, PlacesService } from './places.service';
+import { AutocompleteResult, PlaceDetails, PlacesService } from './places.service';
 
 function optionalPoint(lat?: string, lng?: string): { lat: number; lng: number } | null {
   if (lat === undefined || lng === undefined) return null;
@@ -18,7 +18,7 @@ function optionalPoint(lat?: string, lng?: string): { lat: number; lng: number }
   return p;
 }
 
-/** Signed-in users only, so the paid Google API can't be used anonymously. */
+/** Signed-in users only, so search providers can't be used anonymously through us. */
 @Controller('places')
 @UseGuards(SupabaseAuthGuard)
 export class PlacesController {
@@ -32,7 +32,7 @@ export class PlacesController {
     @Query('session') session = '',
     @Query('lat') lat?: string,
     @Query('lng') lng?: string,
-  ): Promise<{ enabled: boolean; suggestions: PlaceSuggestion[] }> {
+  ): Promise<AutocompleteResult> {
     return this.places.autocomplete(q, session, optionalPoint(lat, lng));
   }
 
