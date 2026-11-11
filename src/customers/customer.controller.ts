@@ -49,6 +49,8 @@ const verifySchema = z.object({
 const onboardSchema = z.object({
   fullName: z.string().trim().min(2).max(100),
   phoneVerificationToken: z.string().max(1000).optional(),
+  /** Contact email from the sign-up form (phone sign-ups have no email on the account). */
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
 });
 
 @Controller('customers')
@@ -95,11 +97,16 @@ export class CustomerController {
     @Body() body: unknown,
   ): Promise<CustomerProfileResponse> {
     const parsed = onboardSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException('Enter your full name');
+    if (!parsed.success) {
+      const field = parsed.error.issues[0]?.path[0];
+      throw new BadRequestException(
+        field === 'email' ? 'Check your email address' : 'Enter your full name',
+      );
+    }
     const customer = await this.customers.onboard(
       user.id,
       user.phoneNumber,
-      user.email ?? null,
+      user.email ?? parsed.data.email ?? null,
       parsed.data.fullName,
       parsed.data.phoneVerificationToken,
     );

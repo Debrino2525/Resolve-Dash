@@ -1,29 +1,41 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError, getCustomerProfile, listOrders, onboardCustomer } from './src/api/backendClient';
+import { forgetRememberedUser, getRememberedUser, RememberedUser, rememberUser } from './src/auth/rememberedUser';
 import {
   AuthCancelledError,
+  sendPhoneSignInCode,
+  signInWithApple,
   signInWithEmail,
   signInWithGoogle,
   signOut,
   signUpWithEmail,
   supabase,
+  verifyPhoneSignInCode,
 } from './src/auth/supabase';
 import { Tab, TabBar } from './src/components/TabBar';
 import { TactileButton } from './src/components/TactileButton';
 import { AccountScreen } from './src/screens/AccountScreen';
-import { AuthScreen, EmailMode } from './src/screens/AuthScreen';
+import { AuthBusy, AuthScreen, AuthTab, EmailMode, SignUpDetails } from './src/screens/AuthScreen';
 import { CompleteProfileScreen } from './src/screens/CompleteProfileScreen';
 import { ConfirmScreen } from './src/screens/ConfirmScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { NewDeliveryScreen } from './src/screens/NewDeliveryScreen';
 import { OrdersScreen } from './src/screens/OrdersScreen';
 import { TrackingScreen } from './src/screens/TrackingScreen';
+import { VerifyCodeScreen } from './src/screens/VerifyCodeScreen';
+import { WelcomeBackScreen } from './src/screens/WelcomeBackScreen';
 import { Colors, Spacing, Typography } from './src/theme/theme';
 import { CustomerOrder, CustomerProfile, DeliveryDraft, isActive, Quote } from './src/types/orders';
 
 type Phase = 'starting' | 'signed_out' | 'loading' | 'needs_profile' | 'ready' | 'error';
+
+/** Signed-out screens: Welcome back (returning user), Sign In / Sign Up, then the SMS code. */
+type AuthView =
+  | { name: 'welcome' }
+  | { name: 'form'; tab: AuthTab; email?: boolean }
+  | { name: 'code'; phone: string; signUp: SignUpDetails | null; from: 'welcome' | 'form'; tab: AuthTab };
 
 /** Pages pushed over the tabs. */
 type Page =
@@ -36,7 +48,12 @@ export default function App(): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting');
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
-  const [authBusy, setAuthBusy] = useState<'google' | 'email' | null>(null);
+  const [authBusy, setAuthBusy] = useState<AuthBusy>(null);
+  const [authView, setAuthView] = useState<AuthView>({ name: 'form', tab: 'sign_in' });
+  const [remembered, setRemembered] = useState<RememberedUser | null>(null);
+  const [sessionPhone, setSessionPhone] = useState<string | null>(null);
+  /** Name and email typed on Sign Up, used to create the profile once the code is confirmed. */
+  const pendingSignUp = useRef<SignUpDetails | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
@@ -50,10 +67,26 @@ export default function App(): React.JSX.Element {
     setPhase('loading');
     setErrorMessage(null);
     try {
-      setProfile(await getCustomerProfile());
+      const p = await getCustomerProfile();
+      setProfile(p);
       setPhase('ready');
+      void rememberUser(p.fullName, p.phoneNumber);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
+        // Signed up with name + phone: create the profile straight away, no extra screen.
+        const signUp = pendingSignUp.current;
+        pendingSignUp.current = null;
+        if (signUp) {
+          try {
+            const p = await onboardCustomer(`${signUp.firstName} ${signUp.lastName}`, null, signUp.email);
+            setProfile(p);
+            setPhase('ready');
+            void rememberUser(p.fullName, p.phoneNumber);
+            return;
+          } catch (onboardErr) {
+            setErrorMessage(onboardErr instanceof Error ? onboardErr.message : 'Could not create your profile');
+          }
+        }
         setPhase('needs_profile');
       } else {
         setErrorMessage(err instanceof Error ? err.message : 'Could not reach GhanaDash');
@@ -62,9 +95,22 @@ export default function App(): React.JSX.Element {
     }
   }, []);
 
+  // Returning user on this phone: start on Welcome back.
+  useEffect(() => {
+    void getRememberedUser().then((u) => {
+      setRemembered(u);
+      if (u) setAuthView({ name: 'welcome' });
+    });
+  }, []);
+
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session) {
+        void getRememberedUser().then((u) => {
+          setRemembered(u);
+          setAuthView(u ? { name: 'welcome' } : { name: 'form', tab: 'sign_in' });
+        });
+        setSessionPhone(null);
         setPhase('signed_out');
         setProfile(null);
         setOrders([]);
@@ -74,6 +120,8 @@ export default function App(): React.JSX.Element {
         return;
       }
       setEmail(session.user.email ?? null);
+      // Supabase stores the verified sign-in phone without '+'.
+      setSessionPhone(session.user.phone ? `+${session.user.phone.replace(/^\+/, '')}` : null);
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         setInfoMessage(null);
         setTimeout(() => void loadProfile(), 0); // avoid Supabase auth-lock deadlock
@@ -132,6 +180,47 @@ export default function App(): React.JSX.Element {
     setOrders((list) => [o, ...list.filter((x) => x.id !== o.id)].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)));
   }, []);
 
+  async function handlePhone(phone: string, signUp: SignUpDetails | null, from: 'welcome' | 'form', tab: AuthTab): Promise<void> {
+    setAuthBusy('phone');
+    setErrorMessage(null);
+    setInfoMessage(null);
+    try {
+      await sendPhoneSignInCode(phone);
+      setAuthView({ name: 'code', phone, signUp, from, tab });
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Could not send the SMS code');
+    } finally {
+      setAuthBusy(null);
+    }
+  }
+
+  async function handleVerifyCode(phone: string, code: string, signUp: SignUpDetails | null): Promise<void> {
+    setAuthBusy('phone');
+    setErrorMessage(null);
+    pendingSignUp.current = signUp;
+    try {
+      await verifyPhoneSignInCode(phone, code); // the auth listener takes it from here
+    } catch (err) {
+      pendingSignUp.current = null;
+      setErrorMessage(err instanceof Error ? err.message : 'Could not check the code');
+    } finally {
+      setAuthBusy(null);
+    }
+  }
+
+  async function handleApple(): Promise<void> {
+    setAuthBusy('apple');
+    setErrorMessage(null);
+    setInfoMessage(null);
+    try {
+      await signInWithApple();
+    } catch (err) {
+      if (!(err instanceof AuthCancelledError)) setErrorMessage(err instanceof Error ? err.message : 'Apple sign-in failed');
+    } finally {
+      setAuthBusy(null);
+    }
+  }
+
   async function handleGoogle(): Promise<void> {
     setAuthBusy('google');
     setErrorMessage(null);
@@ -179,17 +268,87 @@ export default function App(): React.JSX.Element {
       </View>
     );
   } else if (phase === 'signed_out') {
-    screen = (
-      <AuthScreen onGoogle={handleGoogle} onEmailSubmit={handleEmail} busy={authBusy} errorMessage={errorMessage} infoMessage={infoMessage} />
-    );
+    const clear = (): void => {
+      setErrorMessage(null);
+      setInfoMessage(null);
+    };
+    if (authView.name === 'welcome' && remembered) {
+      edgeToEdge = true;
+      screen = (
+        <WelcomeBackScreen
+          user={remembered}
+          busy={authBusy === 'phone'}
+          error={errorMessage}
+          onContinueWithPhone={(phone) => void handlePhone(phone, null, 'welcome', 'sign_in')}
+          onUseEmail={() => {
+            clear();
+            setAuthView({ name: 'form', tab: 'sign_in', email: true });
+          }}
+          onUseAnotherAccount={() => {
+            clear();
+            void forgetRememberedUser();
+            setRemembered(null);
+            setAuthView({ name: 'form', tab: 'sign_in' });
+          }}
+        />
+      );
+    } else if (authView.name === 'code') {
+      const view = authView;
+      screen = (
+        <VerifyCodeScreen
+          phoneE164={view.phone}
+          busy={authBusy === 'phone'}
+          error={errorMessage}
+          onVerify={(code) => handleVerifyCode(view.phone, code, view.signUp)}
+          onResend={async () => {
+            setErrorMessage(null);
+            await sendPhoneSignInCode(view.phone).catch((err: unknown) => {
+              setErrorMessage(err instanceof Error ? err.message : 'Could not send the SMS code');
+              throw err;
+            });
+          }}
+          onEdit={() => {
+            clear();
+            setAuthView(view.from === 'welcome' && remembered ? { name: 'welcome' } : { name: 'form', tab: view.tab });
+          }}
+        />
+      );
+    } else {
+      const view = authView.name === 'form' ? authView : { name: 'form' as const, tab: 'sign_in' as AuthTab };
+      screen = (
+        <AuthScreen
+          key={`${view.tab}-${view.email ? 'email' : 'phone'}`}
+          initialTab={view.tab}
+          startWithEmail={view.email}
+          onBack={
+            remembered
+              ? () => {
+                  clear();
+                  setAuthView({ name: 'welcome' });
+                }
+              : undefined
+          }
+          busy={authBusy}
+          errorMessage={errorMessage}
+          infoMessage={infoMessage}
+          onGoogle={handleGoogle}
+          onApple={handleApple}
+          onPhone={(phone, signUp) => handlePhone(phone, signUp, 'form', signUp ? 'sign_up' : 'sign_in')}
+          onEmailSubmit={handleEmail}
+        />
+      );
+    }
   } else if (phase === 'needs_profile') {
     screen = (
       <CompleteProfileScreen
         accountEmail={email}
+        verifiedPhone={sessionPhone}
         onSignOut={handleSignOut}
         onComplete={async (fullName, token) => {
-          setProfile(await onboardCustomer(fullName, token));
+          const p = await onboardCustomer(fullName, token);
+          setProfile(p);
           setPhase('ready');
+          void rememberUser(p.fullName, p.phoneNumber);
         }}
       />
     );

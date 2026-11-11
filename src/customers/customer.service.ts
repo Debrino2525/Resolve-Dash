@@ -58,7 +58,7 @@ export class CustomerService {
       const pg = err as { code?: string; constraint?: string };
       if (pg.code === '23505' && (pg.constraint ?? '').includes('phone')) {
         throw new ConflictException(
-          'This phone number is already registered to another account. Contact GhanaDash support if it is yours.',
+          'This number already belongs to a GhanaDash account that signs in another way (Google, Apple or email). Sign out and use that option, or contact GhanaDash support.',
         );
       }
       throw err;

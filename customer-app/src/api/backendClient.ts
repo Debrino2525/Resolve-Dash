@@ -81,13 +81,23 @@ export const verifyPhoneCode = (
 ): Promise<{ phoneNumber: string; phoneVerificationToken: string }> =>
   api('/customers/phone/verify', { method: 'POST', body: JSON.stringify({ verificationId, code }) });
 
+/**
+ * Creates the profile. `phoneVerificationToken` is the proof from our own SMS check; null when
+ * the person signed in with their phone (the server reads the verified number from the session).
+ * `email` is an optional contact email from the sign-up form.
+ */
 export const onboardCustomer = (
   fullName: string,
-  phoneVerificationToken: string,
+  phoneVerificationToken: string | null,
+  email: string | null = null,
 ): Promise<CustomerProfile> =>
   api('/customers/onboard', {
     method: 'POST',
-    body: JSON.stringify({ fullName, phoneVerificationToken }),
+    body: JSON.stringify({
+      fullName,
+      ...(phoneVerificationToken ? { phoneVerificationToken } : {}),
+      ...(email ? { email } : {}),
+    }),
   });
 
 // ---------- Deliveries ----------

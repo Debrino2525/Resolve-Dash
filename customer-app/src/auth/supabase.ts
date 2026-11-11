@@ -1,6 +1,6 @@
 import './cryptoPolyfill';
 import { createClient, Session } from '@supabase/supabase-js';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { secureSessionStorage } from './secureStorage';
@@ -148,6 +148,68 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   return { status: 'confirm_email', email: cleanEmail };
 }
 
+/**
+ * Phone sign-in, step 1: Supabase creates a 6-digit code and our server texts it via mNotify
+ * (Supabase "Send SMS" hook). Creates the account on first use. `phoneE164` is +233XXXXXXXXX.
+ */
+export async function sendPhoneSignInCode(phoneE164: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithOtp({ phone: phoneE164 });
+  if (error) throw new Error(friendlyAuthError(error.message));
+}
+
+/** Phone sign-in, step 2: the code from the SMS signs the person in. */
+export async function verifyPhoneSignInCode(phoneE164: string, code: string): Promise<Session> {
+  const { data, error } = await supabase.auth.verifyOtp({ phone: phoneE164, token: code, type: 'sms' });
+  if (error || !data.session) throw new Error(friendlyAuthError(error?.message ?? 'invalid otp'));
+  return data.session;
+}
+
+/**
+ * Sign in with Apple (iOS only, needs a real build). Apple signs an identity token for a nonce we
+ * choose; Supabase checks the token and the raw nonce, so a stolen token can't be replayed.
+ */
+export async function signInWithApple(): Promise<Session> {
+  const AppleAuthentication = await import('expo-apple-authentication');
+  const Crypto = await import('expo-crypto');
+  const rawNonce = Crypto.randomUUID() + Crypto.randomUUID();
+  const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+  let credential;
+  try {
+    credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce: hashedNonce,
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'ERR_REQUEST_CANCELED') throw new AuthCancelledError();
+    throw err;
+  }
+  if (!credential.identityToken) throw new Error('Apple did not return a sign-in token. Please try again.');
+  const { data, error } = await supabase.auth.signInWithIdToken({
+    provider: 'apple',
+    token: credential.identityToken,
+    nonce: rawNonce,
+  });
+  if (error || !data.session) throw new Error(friendlyAuthError(error?.message ?? 'Apple sign-in failed'));
+  return data.session;
+}
+
+/**
+ * True on iPhones where Sign in with Apple can be offered: a real build only. In Expo Go Apple
+ * would sign the token for Expo Go's own app ID, which our Supabase project doesn't accept.
+ */
+export async function appleSignInAvailable(): Promise<boolean> {
+  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return false;
+  try {
+    const AppleAuthentication = await import('expo-apple-authentication');
+    return await AppleAuthentication.isAvailableAsync();
+  } catch {
+    return false;
+  }
+}
+
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
@@ -169,6 +231,19 @@ export function friendlyAuthError(message: string | undefined): string {
   }
   if (m.includes('rate limit') || m.includes('too many')) {
     return 'Too many attempts. Please wait a minute and try again.';
+  }
+  // Messages from our SMS hook are passed through by Supabase; check these before code errors.
+  if (m.includes('ghana phone numbers')) {
+    return 'GhanaDash works with Ghana mobile numbers (+233) only.';
+  }
+  if (m.includes('too many codes')) {
+    return 'Too many codes for this number. Try again in an hour, or continue with Google or email.';
+  }
+  if ((m.includes('sms') || m.includes('otp')) && (m.includes('send') || m.includes('provider') || m.includes('hook'))) {
+    return "We couldn't send the SMS right now. Try again in a minute, or continue with Google or email.";
+  }
+  if (m.includes('expired') || m.includes('invalid') || m.includes('otp')) {
+    return 'That code is wrong or has expired. Check the SMS, or send a new code.';
   }
   return message || 'Authentication failed';
 }
