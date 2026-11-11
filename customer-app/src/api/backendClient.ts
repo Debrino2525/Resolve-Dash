@@ -100,6 +100,10 @@ export const onboardCustomer = (
     }),
   });
 
+/** Edit name and contact email (the verified phone can't be changed here). */
+export const updateCustomerProfile = (fullName: string, email: string | null): Promise<CustomerProfile> =>
+  api('/customers/me', { method: 'PATCH', body: JSON.stringify({ fullName, ...(email ? { email } : {}) }) });
+
 // ---------- Deliveries ----------
 
 export const getQuote = (pickup: Point, dropoff: Point): Promise<Quote> =>

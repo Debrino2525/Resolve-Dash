@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.textPrimary,
   },
-  inputBad: { borderColor: Colors.dangerRed, backgroundColor: '#FFF7F6' },
+  inputBad: { borderColor: Colors.dangerRed, backgroundColor: Colors.dangerDark },
   nameRow: { flexDirection: 'row', gap: Spacing.md },
   fieldError: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
   fieldErrorText: { ...Typography.micro, color: Colors.dangerRed },

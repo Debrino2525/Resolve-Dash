@@ -12,6 +12,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { SUPPORT } from '../../config/support';
 import { Colors, Radii, Spacing, Typography } from '../../theme/theme';
 
 /**
@@ -20,8 +21,8 @@ import { Colors, Radii, Spacing, Typography } from '../../theme/theme';
  * 6-box code input and the legal line.
  */
 
-export const TERMS_URL = 'https://ghanadash.globitechcybersolutions.com/terms.html';
-export const PRIVACY_URL = 'https://ghanadash.globitechcybersolutions.com/privacy.html';
+export const TERMS_URL = SUPPORT.termsUrl;
+export const PRIVACY_URL = SUPPORT.privacyUrl;
 
 /** GhanaDash mark: green tile with a parcel. Replace with the logo image when it is ready. */
 export function BrandMark({ size = 32 }: { size?: number }): React.JSX.Element {
@@ -314,7 +315,7 @@ const styles = StyleSheet.create({
   segmentTab: { paddingVertical: 7, paddingHorizontal: 20, borderRadius: Radii.pill },
   segmentTabOn: { backgroundColor: Colors.textPrimary },
   segmentText: { ...Typography.caption, fontWeight: '700', color: Colors.textSecondary },
-  segmentTextOn: { color: '#FFFFFF' },
+  segmentTextOn: { color: Colors.textInverse },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -325,7 +326,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card,
     overflow: 'hidden',
   },
-  fieldInvalid: { borderColor: Colors.dangerRed, backgroundColor: '#FFF7F6' },
+  fieldInvalid: { borderColor: Colors.dangerRed, backgroundColor: Colors.dangerDark },
   country: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,7 +350,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   socialGoogle: { backgroundColor: Colors.card, borderWidth: 1.5, borderColor: Colors.cardBorder },
-  socialApple: { backgroundColor: '#000000' },
+  socialApple: { backgroundColor: '#000000', borderWidth: 1, borderColor: Colors.cardBorder },
   socialText: { ...Typography.bodyBold, fontSize: 15, color: Colors.textPrimary },
   divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginVertical: Spacing.lg },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.cardBorder },

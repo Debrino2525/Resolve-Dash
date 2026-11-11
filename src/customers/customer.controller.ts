@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -53,6 +54,11 @@ const onboardSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254).optional(),
 });
 
+const updateSchema = z.object({
+  fullName: z.string().trim().min(2).max(100),
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
+});
+
 @Controller('customers')
 @UseGuards(SupabaseAuthGuard)
 export class CustomerController {
@@ -64,6 +70,25 @@ export class CustomerController {
   @Get('me')
   async me(@CurrentUser() user: AuthUser): Promise<CustomerProfileResponse> {
     return toResponse(await this.customers.getProfile(user.id));
+  }
+
+  /** PATCH /customers/me {fullName, email?}: edit details from the Account screen. */
+  @Patch('me')
+  @Throttle({ default: { limit: 10, ttl: throttleTtlMs() } })
+  async updateMe(
+    @CurrentUser() user: AuthUser,
+    @Body() body: unknown,
+  ): Promise<CustomerProfileResponse> {
+    const parsed = updateSchema.safeParse(body);
+    if (!parsed.success) {
+      const field = parsed.error.issues[0]?.path[0];
+      throw new BadRequestException(
+        field === 'email' ? 'Check your email address' : 'Enter your full name',
+      );
+    }
+    return toResponse(
+      await this.customers.updateDetails(user.id, parsed.data.fullName, parsed.data.email ?? null),
+    );
   }
 
   @Post('phone/send-code')

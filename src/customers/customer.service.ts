@@ -22,6 +22,17 @@ export class CustomerService {
     return customer;
   }
 
+  /**
+   * Edit name and contact email from the Account screen. The phone number stays as verified
+   * (changing it needs a new SMS check); an email can be added or changed, not removed.
+   */
+  async updateDetails(userId: string, fullName: string, email: string | null): Promise<Customer> {
+    const current = await this.getProfile(userId);
+    const name = fullName.trim();
+    if (name.length < 2 || name.length > 100) throw new BadRequestException('Enter your full name');
+    return this.customers.upsert(userId, name, current.phoneNumber, email);
+  }
+
   /** True if another customer already owns this number (checked before an SMS is sent). */
   readonly phoneTakenByAnother = async (phone: string, userId: string): Promise<boolean> => {
     const owner = await this.customers.findByPhone(phone);

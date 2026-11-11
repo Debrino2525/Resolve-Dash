@@ -417,7 +417,17 @@ export default function App(): React.JSX.Element {
           )}
           {tab === 'account' && (
             <SafeAreaView style={styles.flex} edges={['top']}>
-              <AccountScreen profile={profile} onSignOut={handleSignOut} />
+              <AccountScreen
+                profile={profile}
+                orders={orders}
+                onSignOut={handleSignOut}
+                onOpenOrder={openOrder}
+                onShowOrders={() => setTab('orders')}
+                onProfileChange={(p) => {
+                  setProfile(p);
+                  void rememberUser(p.fullName, p.phoneNumber);
+                }}
+              />
             </SafeAreaView>
           )}
         </View>
