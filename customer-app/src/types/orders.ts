@@ -46,6 +46,8 @@ export interface AssignedRider {
   fullName: string;
   phoneNumber: string;
   plate: string | null;
+  /** An admin-approved rider photo exists (GET /orders/:id/rider-photo). */
+  hasPhoto: boolean;
   rating: number | null;
   completedTrips: number;
   location: { lat: number; lng: number; heading: number | null; updatedAt: string } | null;

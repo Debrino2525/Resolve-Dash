@@ -171,7 +171,7 @@ export async function initializeSubscriptionCheckout(): Promise<CheckoutSessionR
   });
 }
 
-/** The rider's four compliance documents and their review status. */
+/** The rider's compliance documents and profile photo, with their review status. */
 export async function getMyDocuments(): Promise<DocumentChecklist> {
   return authenticatedFetch<DocumentChecklist>('/riders/me/documents', { method: 'GET' });
 }

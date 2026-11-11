@@ -1,4 +1,4 @@
-export type RiderDocumentType = 'GHANA_CARD' | 'DRIVERS_LICENSE' | 'ROADWORTHY' | 'INSURANCE';
+export type RiderDocumentType = 'GHANA_CARD' | 'DRIVERS_LICENSE' | 'ROADWORTHY' | 'INSURANCE' | 'PROFILE_PHOTO';
 
 export type DocumentChecklistStatus = 'MISSING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 

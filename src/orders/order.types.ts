@@ -67,6 +67,8 @@ export interface AssignedRider {
   phoneNumber: string;
   /** Motorbike registration from the approved roadworthy certificate, if any. */
   plate: string | null;
+  /** An admin-approved profile photo exists (GET /orders/:id/rider-photo). */
+  hasPhoto: boolean;
   rating: number | null;
   completedTrips: number;
   location: { lat: number; lng: number; heading: number | null; updatedAt: string } | null;

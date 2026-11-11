@@ -48,14 +48,14 @@ describe('AdminService.approveRider document gate', () => {
   it(`refuses to activate a rider with fewer than ${REQUIRED_DOCUMENT_COUNT} approved documents`, async () => {
     const { service, queries } = setup(3);
     await expect(service.approveRider(RIDER, ADMIN)).rejects.toThrow(ConflictException);
-    await expect(service.approveRider(RIDER, ADMIN)).rejects.toThrow('(3/4 approved)');
+    await expect(service.approveRider(RIDER, ADMIN)).rejects.toThrow('(3/5 approved)');
     expect(
       queries.some((q) => q.startsWith("UPDATE riders SET onboarding_status = 'ACTIVE'")),
     ).toBe(false);
   });
 
   it('activates and audits once all documents are approved', async () => {
-    const { service, queries } = setup(4);
+    const { service, queries } = setup(REQUIRED_DOCUMENT_COUNT);
     const result = await service.approveRider(RIDER, ADMIN);
 
     expect(

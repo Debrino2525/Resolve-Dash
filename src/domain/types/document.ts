@@ -3,6 +3,7 @@ export const RIDER_DOCUMENT_TYPES = [
   'DRIVERS_LICENSE',
   'ROADWORTHY',
   'INSURANCE',
+  'PROFILE_PHOTO',
 ] as const;
 
 export type RiderDocumentType = (typeof RIDER_DOCUMENT_TYPES)[number];
@@ -27,7 +28,16 @@ export interface RiderDocument {
 /** Rules per document type, shared by validation and the API response. */
 export const DOCUMENT_RULES: Record<
   RiderDocumentType,
-  { label: string; expiryRequired: boolean; numberPattern?: RegExp; numberHint: string }
+  {
+    label: string;
+    expiryRequired: boolean;
+    numberPattern?: RegExp;
+    numberHint: string;
+    /** false for the profile photo: there is no number to type. */
+    numberRequired?: boolean;
+    /** Photos only (no PDF). */
+    imageOnly?: boolean;
+  }
 > = {
   GHANA_CARD: {
     label: 'Ghana Card',
@@ -49,6 +59,13 @@ export const DOCUMENT_RULES: Record<
     label: 'Motorbike insurance',
     expiryRequired: true,
     numberHint: 'Policy or certificate number',
+  },
+  PROFILE_PHOTO: {
+    label: 'Profile photo (selfie)',
+    expiryRequired: false,
+    numberRequired: false,
+    imageOnly: true,
+    numberHint: 'A clear photo of your face: no helmet, hat or sunglasses',
   },
 };
 

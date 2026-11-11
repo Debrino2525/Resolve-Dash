@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { StoredFile, SupabaseStorageClient } from '../storage/supabase-storage.client';
+import {
+  RIDER_DOCUMENTS_BUCKET,
+  StoredFile,
+  SupabaseStorageClient,
+} from '../storage/supabase-storage.client';
 import { OrderRepository } from './order.repository';
 import { DeliveryOrder, OrderStatus } from './order.types';
 
@@ -120,6 +124,20 @@ export class OrderMediaService {
       this.roleOf(order, userId) !== null || (await this.hasOpenOffer(orderId, userId));
     if (!allowed) throw new NotFoundException('Order not found');
     return this.storage.download(ORDER_PHOTOS_BUCKET, order.packagePhotoPath, accessToken);
+  }
+
+  /**
+   * The assigned rider's approved profile photo, for the customer of an order in progress only.
+   * Storage enforces the same rule (public.can_read_rider_photo) with the customer's own token.
+   */
+  async readRiderPhoto(userId: string, accessToken: string, orderId: string): Promise<StoredFile> {
+    const order = await this.requireOrder(orderId);
+    if (order.customerId !== userId || !order.riderId || !CHAT_OPEN.includes(order.status)) {
+      throw new NotFoundException('Order not found');
+    }
+    const path = await this.orders.approvedRiderPhotoPath(order.riderId);
+    if (!path) throw new NotFoundException('This rider has no photo yet');
+    return this.storage.download(RIDER_DOCUMENTS_BUCKET, path, accessToken);
   }
 
   async thread(userId: string, orderId: string): Promise<ChatThread> {

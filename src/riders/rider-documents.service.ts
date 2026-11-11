@@ -76,7 +76,8 @@ const FILE_KINDS: Record<string, { ext: string; magic: (b: Buffer) => boolean }>
 /**
  * Rider compliance documents (Ghana Card, licence, roadworthy, insurance).
  * Files go to private Supabase Storage using the caller's own JWT; metadata lives in
- * rider_documents. Admin approval of the rider requires all four documents APPROVED.
+ * rider_documents. Admin approval of the rider requires every document (four papers and the
+ * profile photo) APPROVED.
  */
 @Injectable()
 export class RiderDocumentsService {
@@ -112,7 +113,9 @@ export class RiderDocumentsService {
       throw new ForbiddenException('This rider application was not approved.');
     }
 
-    const documentNumber = (input.documentNumber ?? '').trim().toUpperCase();
+    // The profile photo has no number to type; store a fixed marker (the column is NOT NULL).
+    const documentNumber =
+      rules.numberRequired === false ? 'SELFIE' : (input.documentNumber ?? '').trim().toUpperCase();
     if (documentNumber.length < 3 || documentNumber.length > 60) {
       throw new BadRequestException(`Enter the ${rules.label} number. ${rules.numberHint}.`);
     }
@@ -131,6 +134,9 @@ export class RiderDocumentsService {
     const kind = FILE_KINDS[file.mimetype];
     if (!kind || !kind.magic(file.buffer)) {
       throw new BadRequestException('Upload a JPG, PNG or WebP photo, or a PDF.');
+    }
+    if (rules.imageOnly && file.mimetype === 'application/pdf') {
+      throw new BadRequestException(`The ${rules.label} must be a photo, not a PDF.`);
     }
 
     const storagePath = `${riderId}/${docType}/${Date.now()}.${kind.ext}`;
@@ -185,6 +191,15 @@ export class RiderDocumentsService {
     }
     await this.documents.review(riderId, documentId, decision, trimmed, adminId);
     return this.getChecklist(riderId);
+  }
+
+  /** The rider's own profile photo (whatever its review status), for their avatar in the app. */
+  async readOwnProfilePhoto(riderId: string, accessToken: string): Promise<StoredFile> {
+    const doc = (await this.documents.listForRider(riderId)).find(
+      (d) => d.docType === 'PROFILE_PHOTO',
+    );
+    if (!doc) throw new NotFoundException('No profile photo yet');
+    return this.storage.download(RIDER_DOCUMENTS_BUCKET, doc.storagePath, accessToken);
   }
 
   private async requireDocument(riderId: string, documentId: string): Promise<RiderDocument> {

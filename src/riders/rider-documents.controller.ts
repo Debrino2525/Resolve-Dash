@@ -5,12 +5,14 @@ import {
   Headers,
   Param,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
@@ -36,6 +38,20 @@ export class RiderDocumentsController {
   @Get()
   getChecklist(@CurrentUser() user: AuthUser): Promise<DocumentChecklist> {
     return this.documents.getChecklist(user.id);
+  }
+
+  /** The rider's own profile photo (their avatar in the app). */
+  @Get('profile-photo')
+  async profilePhoto(
+    @CurrentUser() user: AuthUser,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const file = await this.documents.readOwnProfilePhoto(user.id, bearerToken(authorization));
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(file.body);
   }
 
   /**

@@ -218,12 +218,23 @@ export class OrderRepository {
   }
 
   /** Rider card for the customer: identity, plate, rating, trips and live position. */
+  /** Storage path of the rider's admin-approved profile photo, if any. */
+  async approvedRiderPhotoPath(riderId: string): Promise<string | null> {
+    const res = await this.db.query<{ storage_path: string }>(
+      `SELECT storage_path FROM rider_documents
+       WHERE rider_id = $1 AND doc_type = 'PROFILE_PHOTO' AND status = 'APPROVED'`,
+      [riderId],
+    );
+    return res.rows[0]?.storage_path ?? null;
+  }
+
   async assignedRider(riderId: string): Promise<AssignedRider | null> {
     const res = await this.db.query<{
       id: string;
       full_name: string;
       phone_number: string;
       plate: string | null;
+      has_photo: boolean;
       rating: string | null;
       trips: number;
       latitude: number | null;
@@ -234,6 +245,8 @@ export class OrderRepository {
       `SELECT r.id, r.full_name, r.phone_number,
               (SELECT d.document_number FROM rider_documents d
                  WHERE d.rider_id = r.id AND d.doc_type = 'ROADWORTHY' AND d.status = 'APPROVED') AS plate,
+              EXISTS (SELECT 1 FROM rider_documents d
+                 WHERE d.rider_id = r.id AND d.doc_type = 'PROFILE_PHOTO' AND d.status = 'APPROVED') AS has_photo,
               (SELECT ROUND(AVG(o.rating)::numeric, 1)::text FROM delivery_orders o
                  WHERE o.rider_id = r.id AND o.rating IS NOT NULL) AS rating,
               (SELECT COUNT(*)::int FROM delivery_orders o
@@ -250,6 +263,7 @@ export class OrderRepository {
       fullName: row.full_name,
       phoneNumber: row.phone_number,
       plate: row.plate,
+      hasPhoto: Boolean(row.has_photo),
       rating: row.rating ? Number(row.rating) : null,
       completedTrips: row.trips,
       location:

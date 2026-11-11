@@ -284,9 +284,13 @@ function RiderCard({
   return (
     <View style={styles.card}>
       <View style={styles.row}>
-        <View style={styles.avatar}>
-          <MaterialCommunityIcons name="moped" size={24} color={Colors.onBrand} />
-        </View>
+        {r.hasPhoto ? (
+          <AuthImage path={`/orders/${order.id}/rider-photo`} style={styles.avatarPhoto} />
+        ) : (
+          <View style={styles.avatar}>
+            <MaterialCommunityIcons name="moped" size={24} color={Colors.onBrand} />
+          </View>
+        )}
         <View style={styles.flex}>
           <Text style={styles.bodyBold}>{r.fullName}</Text>
           <Text style={styles.small}>
@@ -539,6 +543,7 @@ const styles = StyleSheet.create({
   body: { ...Typography.body, color: Colors.textSecondary },
   bodyBold: { ...Typography.bodyBold, color: Colors.textPrimary },
   small: { ...Typography.caption, color: Colors.textSecondary },
+  avatarPhoto: { width: 48, height: 48, borderRadius: 24 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.dispatchGreen, alignItems: 'center', justifyContent: 'center' },
   round: { width: TOUCH_TARGET, height: TOUCH_TARGET, borderRadius: TOUCH_TARGET / 2, alignItems: 'center', justifyContent: 'center' },
   pinCard: { alignItems: 'center', borderColor: Colors.dispatchGreen, backgroundColor: Colors.dispatchGreenGlow },

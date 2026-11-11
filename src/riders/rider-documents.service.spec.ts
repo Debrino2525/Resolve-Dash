@@ -54,6 +54,42 @@ describe('RiderDocumentsService', () => {
   ): ReturnType<RiderDocumentsService['submit']> =>
     service.submit(RIDER, TOKEN, type, input, file, TODAY);
 
+  describe('profile photo', () => {
+    it('needs no number or expiry, and is stored under the rider’s folder', async () => {
+      await submit('PROFILE_PHOTO', {});
+      expect(storage.upload.mock.calls[0][1]).toMatch(
+        new RegExp(`^${RIDER}/PROFILE_PHOTO/\\d+\\.jpg$`),
+      );
+      expect(docs.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          docType: 'PROFILE_PHOTO',
+          documentNumber: 'SELFIE',
+          expiryDate: null,
+        }),
+      );
+    });
+
+    it('must be a photo, not a PDF', async () => {
+      await expect(
+        submit('PROFILE_PHOTO', {}, { buffer: PDF, mimetype: 'application/pdf', size: PDF.length }),
+      ).rejects.toThrow('must be a photo');
+      expect(storage.upload).not.toHaveBeenCalled();
+    });
+
+    it('lets the rider read their own photo for their avatar', async () => {
+      docs.listForRider.mockResolvedValue([
+        { docType: 'PROFILE_PHOTO', storagePath: `${RIDER}/PROFILE_PHOTO/1.jpg` } as RiderDocument,
+      ]);
+      storage.download.mockResolvedValue({ body: JPEG, contentType: 'image/jpeg' });
+      await service.readOwnProfilePhoto(RIDER, TOKEN);
+      expect(storage.download).toHaveBeenCalledWith(
+        'rider-documents',
+        `${RIDER}/PROFILE_PHOTO/1.jpg`,
+        TOKEN,
+      );
+    });
+  });
+
   describe('submit', () => {
     it('stores the file in the rider’s own folder with their JWT, then upserts metadata', async () => {
       await submit('GHANA_CARD', { documentNumber: 'gha-123456789-0', expiryDate: '2030-01-31' });
@@ -205,7 +241,7 @@ describe('RiderDocumentsService', () => {
   });
 
   describe('buildChecklist', () => {
-    it('lists all four required documents in order, marking missing ones', () => {
+    it('lists all required documents (four papers and the profile photo) in order, marking missing ones', () => {
       const c = buildChecklist([
         {
           id: 'd1',
@@ -226,8 +262,9 @@ describe('RiderDocumentsService', () => {
         ['DRIVERS_LICENSE', 'MISSING'],
         ['ROADWORTHY', 'MISSING'],
         ['INSURANCE', 'APPROVED'],
+        ['PROFILE_PHOTO', 'MISSING'],
       ]);
-      expect(c).toMatchObject({ submittedCount: 1, approvedCount: 1, requiredCount: 4 });
+      expect(c).toMatchObject({ submittedCount: 1, approvedCount: 1, requiredCount: 5 });
     });
   });
 });

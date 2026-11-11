@@ -67,6 +67,8 @@ export function DocumentUploadSheet({
   if (!item) return <></>;
 
   const isGhanaCard = item.docType === 'GHANA_CARD';
+  /** The profile photo: a selfie with the front camera only (no number, no expiry, no gallery). */
+  const isSelfie = item.docType === 'PROFILE_PHOTO';
 
   const pick = async (source: 'camera' | 'library'): Promise<void> => {
     setError(null);
@@ -87,7 +89,9 @@ export function DocumentUploadSheet({
       mediaTypes: ['images'],
       quality: 0.6, // keeps uploads small (well under 5 MB) and converts HEIC to JPEG on iOS
       exif: false,
-      allowsEditing: false,
+      // Selfie: front camera, square crop so it fits the round avatar.
+      allowsEditing: isSelfie,
+      ...(isSelfie ? { aspect: [1, 1] as [number, number], cameraType: ImagePicker.CameraType.front } : {}),
     };
     const result =
       source === 'camera'
@@ -99,6 +103,18 @@ export function DocumentUploadSheet({
   };
 
   const submit = async (): Promise<void> => {
+    if (isSelfie) {
+      if (!file) return setError('Take a selfie: a clear photo of your face.');
+      setBusy(true);
+      setError(null);
+      try {
+        onUploaded(await uploadDocument(item.docType, { documentNumber: '', expiryDate: '' }, file));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+        setBusy(false);
+      }
+      return;
+    }
     const docNumber = number.trim().toUpperCase();
     if (docNumber.length < 3) return setError(`Enter the number. ${item.numberHint}.`);
     if (isGhanaCard && !GHANA_CARD.test(docNumber)) {
@@ -154,6 +170,8 @@ export function DocumentUploadSheet({
             </View>
           )}
 
+          {!isSelfie && (
+          <>
           <Text style={styles.label}>{isGhanaCard ? 'Ghana Card number' : 'Document number'}</Text>
           <TextInput
             style={styles.input}
@@ -177,26 +195,37 @@ export function DocumentUploadSheet({
             keyboardType="number-pad"
             maxLength={10}
           />
+          </>
+          )}
 
-          <Text style={styles.label}>Photo of the document</Text>
-          <View style={styles.preview}>
+          <Text style={styles.label}>{isSelfie ? 'Your photo' : 'Photo of the document'}</Text>
+          <View style={[styles.preview, isSelfie && styles.selfiePreview]}>
             {file ? (
-              <Image source={{ uri: file.uri }} style={styles.previewImage} resizeMode="contain" accessibilityLabel={`${item.label} photo`} />
+              <Image
+                source={{ uri: file.uri }}
+                style={styles.previewImage}
+                resizeMode={isSelfie ? 'cover' : 'contain'}
+                accessibilityLabel={`${item.label} photo`}
+              />
             ) : (
               <Text style={styles.previewHint}>
-                Lay the document flat in good light. Make sure every corner and all text is readable.
+                {isSelfie
+                  ? 'Face the camera in good light. No helmet, hat or sunglasses. Customers see this photo so they know who is coming, and our team checks it against your Ghana Card.'
+                  : 'Lay the document flat in good light. Make sure every corner and all text is readable.'}
               </Text>
             )}
           </View>
           <View style={styles.pickRow}>
             <TouchableOpacity style={styles.pickBtn} onPress={() => pick('camera')} disabled={busy} accessibilityRole="button">
               <Ionicons name="camera-outline" size={20} color={Colors.textPrimary} />
-              <Text style={styles.pickText}>{file ? 'Retake' : 'Take photo'}</Text>
+              <Text style={styles.pickText}>{file ? 'Retake' : isSelfie ? 'Take selfie' : 'Take photo'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.pickBtn} onPress={() => pick('library')} disabled={busy} accessibilityRole="button">
-              <Ionicons name="images-outline" size={20} color={Colors.textPrimary} />
-              <Text style={styles.pickText}>Choose photo</Text>
-            </TouchableOpacity>
+            {!isSelfie && (
+              <TouchableOpacity style={styles.pickBtn} onPress={() => pick('library')} disabled={busy} accessibilityRole="button">
+                <Ionicons name="images-outline" size={20} color={Colors.textPrimary} />
+                <Text style={styles.pickText}>Choose photo</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <TactileButton
@@ -208,8 +237,9 @@ export function DocumentUploadSheet({
             style={styles.submit}
           />
           <Text style={styles.privacy}>
-            Only GhanaDash verification staff can see your documents. They are stored privately and
-            used only to verify you.
+            {isSelfie
+              ? 'Stored privately. Our verification team sees it, and once approved, customers see it only during a delivery with you.'
+              : 'Only GhanaDash verification staff can see your documents. They are stored privately and used only to verify you.'}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -311,6 +341,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     marginTop: Spacing.xs,
+  },
+  selfiePreview: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    alignSelf: 'center',
   },
   previewImage: {
     width: '100%',

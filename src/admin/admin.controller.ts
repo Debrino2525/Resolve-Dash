@@ -210,7 +210,7 @@ export class AdminController {
     return this.adminService.endTrial(id, admin.id, parsed.data.reason);
   }
 
-  /** The rider's four compliance documents and their review status (no file contents). */
+  /** The rider's compliance documents and profile photo, with review status (no file contents). */
   @Get('api/riders/:id/documents')
   @UseGuards(AdminGuard)
   getRiderDocuments(@Param('id', ParseUUIDPipe) id: string): Promise<DocumentChecklist> {

@@ -72,6 +72,17 @@ export class OrderMediaController {
     sendImage(res, await this.media.readPackagePhoto(user.id, bearerToken(authorization), id));
   }
 
+  /** The customer's view of their rider's approved profile photo (order in progress). */
+  @Get(':id/rider-photo')
+  async riderPhoto(
+    @CurrentUser() user: AuthUser,
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    sendImage(res, await this.media.readRiderPhoto(user.id, bearerToken(authorization), id));
+  }
+
   @Get(':id/messages')
   @Throttle({ default: { limit: 60, ttl: throttleTtlMs() } }) // polled every few seconds
   messages(

@@ -592,7 +592,7 @@
 
     var actions = '';
     if (pending) {
-      actions += '<button class="btn btn-primary" data-action="approve-rider"' + (allApproved ? '' : ' disabled title="Approve all four documents first"') + '>' + ico('check') + 'Approve rider</button>';
+      actions += '<button class="btn btn-primary" data-action="approve-rider"' + (allApproved ? '' : ' disabled title="Approve every document and the profile photo first"') + '>' + ico('check') + 'Approve rider</button>';
       if (!allApproved) actions += '<p class="small muted" style="margin:0">Approve all ' + docs.requiredCount + ' documents to enable rider approval (' + docs.approvedCount + '/' + docs.requiredCount + ').</p>';
     }
     actions += '<button class="btn" data-action="grant-access">' + ico('gift') + 'Grant 7 days free</button>';

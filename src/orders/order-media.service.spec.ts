@@ -55,7 +55,10 @@ function setup(o: DeliveryOrder | null = order(), offerOpen = false) {
     return { rows: [], rowCount: 1 };
   });
   const db = { query } as unknown as DatabaseService;
-  const repo = { findById: jest.fn(async () => o) } as unknown as OrderRepository;
+  const repo = {
+    findById: jest.fn(async () => o),
+    approvedRiderPhotoPath: jest.fn(async () => `${RIDER}/PROFILE_PHOTO/1.jpg`),
+  } as unknown as OrderRepository;
   const storage = {
     upload: jest.fn(async () => undefined),
     download: jest.fn(async () => ({ body: Buffer.from('img'), contentType: 'image/jpeg' })),
@@ -166,5 +169,27 @@ describe('OrderMediaService', () => {
       String(sql).startsWith('INSERT INTO order_messages'),
     );
     expect(insert?.[1]).toEqual([ORDER, RIDER, 'RIDER', 'This one?', path]);
+  });
+});
+
+describe('rider photo for the customer', () => {
+  it('shows the approved photo to the customer while the delivery is in progress', async () => {
+    const { svc, storage } = setup(order({ status: 'PICKED_UP' }));
+    await svc.readRiderPhoto(CUSTOMER, 'cust-token', ORDER);
+    expect(storage.download).toHaveBeenCalledWith(
+      'rider-documents',
+      `${RIDER}/PROFILE_PHOTO/1.jpg`,
+      'cust-token',
+    );
+  });
+
+  it.each([
+    ['someone else', STRANGER, order()],
+    ['the rider (not via this route)', RIDER, order()],
+    ['after delivery', CUSTOMER, order({ status: 'DELIVERED' })],
+  ])('refuses %s', async (_label, user, o) => {
+    const { svc, storage } = setup(o);
+    await expect(svc.readRiderPhoto(user, 't', ORDER)).rejects.toThrow(NotFoundException);
+    expect(storage.download).not.toHaveBeenCalled();
   });
 });

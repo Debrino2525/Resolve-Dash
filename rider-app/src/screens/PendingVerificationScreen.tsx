@@ -63,7 +63,7 @@ function headline(c: DocumentChecklist): { title: string; body: string } {
   if (c.submittedCount < c.requiredCount) {
     return {
       title: 'Upload your documents',
-      body: `${c.submittedCount} of ${c.requiredCount} uploaded. We need all four before we can review your application.`,
+      body: `${c.submittedCount} of ${c.requiredCount} uploaded. We need all ${c.requiredCount} (your papers and a selfie) before we can review your application.`,
     };
   }
   if (c.approvedCount < c.requiredCount) {

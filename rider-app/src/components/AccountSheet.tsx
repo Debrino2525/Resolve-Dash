@@ -10,7 +10,9 @@ import { cedis } from '../types/dispatch';
 import { DocumentChecklist, DocumentChecklistItem } from '../types/documents';
 import { SubscriptionDetails } from '../types/subscription';
 import { formatGhanaLocal } from '../utils/phone';
+import { AuthImage } from './AuthImage';
 import { BrandMark } from './auth/AuthParts';
+import { DocumentUploadSheet } from './DocumentUploadSheet';
 import { InlineNotice } from './InlineNotice';
 import { initialsOf } from './ScreenTopBar';
 
@@ -69,6 +71,21 @@ export function AccountSheet({
   onSignOut,
 }: AccountSheetProps): React.JSX.Element {
   const [docsOpen, setDocsOpen] = useState(false);
+  /** The rider's documents, for their profile photo (avatar and the "add photo" prompt). */
+  const [checklist, setChecklist] = useState<DocumentChecklist | null>(null);
+  const [photoItem, setPhotoItem] = useState<DocumentChecklistItem | null>(null);
+  const [photoVersion, setPhotoVersion] = useState(0);
+
+  useEffect(() => {
+    if (!visible) return;
+    getMyDocuments()
+      .then(setChecklist)
+      .catch(() => setChecklist(null));
+  }, [visible]);
+
+  const photo = checklist?.items.find((i) => i.docType === 'PROFILE_PHOTO') ?? null;
+  const hasPhoto = Boolean(photo && photo.status !== 'MISSING');
+  const photoNeedsAction = Boolean(photo && (photo.status === 'MISSING' || photo.status === 'REJECTED'));
   const version = Constants.expoConfig?.version ?? '1.0.0';
   const subscription = work?.subscription ?? null;
   const plan = planSummary(subscription);
@@ -106,9 +123,17 @@ export function AccountSheet({
           <View style={styles.card}>
             <View style={styles.profileRow}>
               <View>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initialsOf(riderName)}</Text>
-                </View>
+                {hasPhoto ? (
+                  <AuthImage
+                    key={photoVersion}
+                    path="/riders/me/documents/profile-photo"
+                    style={styles.avatarPhoto}
+                  />
+                ) : (
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{initialsOf(riderName)}</Text>
+                  </View>
+                )}
                 <View style={styles.avatarBadge}>
                   <Ionicons name="shield-checkmark" size={12} color={Colors.dispatchGreenLight} />
                 </View>
@@ -136,6 +161,26 @@ export function AccountSheet({
               <Text style={styles.city}>TAKORADI</Text>
             </View>
           </View>
+
+          {photoNeedsAction && photo && (
+            <TouchableOpacity style={styles.photoPrompt} onPress={() => setPhotoItem(photo)} accessibilityRole="button">
+              <Ionicons name="camera" size={20} color={Colors.onBrand} />
+              <View style={styles.flex}>
+                <Text style={styles.photoPromptTitle}>
+                  {photo.status === 'REJECTED' ? 'Retake your profile photo' : 'Add your profile photo'}
+                </Text>
+                <Text style={styles.photoPromptSub}>
+                  {photo.status === 'REJECTED' && photo.reviewNote
+                    ? photo.reviewNote
+                    : 'Customers see it during deliveries so they know who is coming.'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.onBrand} />
+            </TouchableOpacity>
+          )}
+          {photo?.status === 'SUBMITTED' && (
+            <Text style={styles.photoPending}>Profile photo sent: customers see it once our team approves it.</Text>
+          )}
 
           {work && (
           <>
@@ -202,6 +247,15 @@ export function AccountSheet({
         </ScrollView>
 
         <DocumentsModal visible={docsOpen} onClose={() => setDocsOpen(false)} />
+        <DocumentUploadSheet
+          item={photoItem}
+          onClose={() => setPhotoItem(null)}
+          onUploaded={(c) => {
+            setChecklist(c);
+            setPhotoItem(null);
+            setPhotoVersion((v) => v + 1);
+          }}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -339,6 +393,18 @@ const styles = StyleSheet.create({
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: Colors.dispatchGreen, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 22, fontWeight: '800', color: Colors.onBrand },
+  avatarPhoto: { width: 60, height: 60, borderRadius: 30 },
+  photoPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: Radii.xl,
+    backgroundColor: Colors.dispatchGreen,
+  },
+  photoPromptTitle: { ...Typography.bodyBold, color: Colors.onBrand },
+  photoPromptSub: { ...Typography.caption, fontSize: 12, color: Colors.onBrand },
+  photoPending: { ...Typography.caption, color: Colors.textSecondary, textAlign: 'center' },
   avatarBadge: {
     position: 'absolute',
     right: -2,
