@@ -1,8 +1,9 @@
 /*
  * GhanaDash Admin portal (no build step).
- * Runs under Helmet's CSP: script-src 'self', no inline handlers, connect-src 'self',
- * img-src 'self' data:. All behaviour is attached here via event delegation; document photos
- * are shown as data: URLs; every value rendered into HTML goes through esc().
+ * Runs under Helmet's CSP: script-src 'self' (+ api.mapbox.com for the Live map), no inline
+ * handlers, connect-src 'self' (+ Mapbox tiles/API). All behaviour is attached here via event
+ * delegation; document photos are shown as data: URLs; every value rendered into HTML goes
+ * through esc(); map popups are built with textContent.
  */
 (function () {
   'use strict';
@@ -221,6 +222,7 @@
     document.documentElement.setAttribute('data-theme', t);
     $('theme-icon').innerHTML = icon(t === 'dark' ? 'sun' : 'moon');
     try { localStorage.setItem('gd_admin_theme', t); } catch (e) { /* ignore */ }
+    if (live.map) { live.map.setStyle(mapStyle()); }
   }
 
   // ---------------------------------------------------------------- state
@@ -232,7 +234,10 @@
     sort: { key: 'createdAt', dir: -1 },
     chart: 'signups',
     payTab: '',
-    dashboard: null
+    dashboard: null,
+    del: { tab: '', q: '', page: 1, seq: 0 },
+    cust: { q: '', page: 1, seq: 0 },
+    rendered: null
   };
 
   async function loadRiders(force) {
@@ -254,15 +259,48 @@
   // ---------------------------------------------------------------- router
   var content = function () { return $('content'); };
 
-  function route() {
+  var SEARCH_HINT = {
+    deliveries: 'Search orders by code, phone or customer name',
+    customers: 'Search customers by name, phone or email'
+  };
+  function currentPage() {
+    return ((location.hash || '#/overview').replace(/^#\/?/, '').split('/')[0]) || 'overview';
+  }
+  function syncSearchBox(page) {
+    var box = $('global-search');
+    box.placeholder = SEARCH_HINT[page] || 'Search riders by name, phone or email';
+    box.setAttribute('aria-label', SEARCH_HINT[page] ? box.placeholder : 'Search riders');
+    box.value = page === 'deliveries' ? state.del.q : page === 'customers' ? state.cust.q : state.search;
+  }
+
+  function route(force) {
     var hash = (location.hash || '#/overview').replace(/^#\/?/, '');
     var parts = hash.split('/');
     var page = parts[0] || 'overview';
     document.querySelectorAll('.nav a').forEach(function (a) {
-      a.classList.toggle('active', a.getAttribute('data-route') === (page === 'riders' && parts[1] ? 'riders' : page));
+      a.classList.toggle('active', a.getAttribute('data-route') === page);
     });
     $('sidebar').classList.remove('open');
+    syncSearchBox(page);
+    if (page !== 'live') stopLive();
+
+    // Deliveries and customers open their detail in a drawer over the list (#/deliveries/<id>).
+    if (page === 'deliveries' || page === 'customers') {
+      var sub = parts[1];
+      if (sub && !UUID.test(sub)) { location.hash = '#/' + page; return; }
+      if (force === true || state.rendered !== page) {
+        state.rendered = page;
+        window.scrollTo(0, 0);
+        if (page === 'deliveries') pageDeliveries(); else pageCustomers();
+      }
+      if (sub) return page === 'deliveries' ? openDelivery(sub) : openCustomer(sub);
+      closeDrawer();
+      return;
+    }
+    closeDrawer();
+    state.rendered = page;
     window.scrollTo(0, 0);
+    if (page === 'live') return pageLive();
 
     if (page === 'riders' && parts[1]) {
       if (!UUID.test(parts[1])) { location.hash = '#/riders'; return; }
@@ -737,6 +775,501 @@
     } catch (err) { fail(err); }
   }
 
+  // ---------------------------------------------------------------- deliveries, customers, live map
+  var DSTATUS = {
+    SEARCHING: ['amber', 'Finding rider'],
+    ASSIGNED: ['blue', 'Rider assigned'],
+    PICKED_UP: ['blue', 'On the way'],
+    DELIVERED: ['green', 'Delivered'],
+    CANCELLED: ['red', 'Cancelled'],
+    NO_RIDER: ['gray', 'No rider found']
+  };
+  var DEL_TABS = [['', 'All'], ['ACTIVE', 'Active'], ['DELIVERED', 'Delivered'], ['CANCELLED', 'Cancelled / no rider']];
+  var PACKAGE = { DOCUMENT: 'Document', SMALL_PARCEL: 'Small parcel', FOOD: 'Food', LARGE_ITEM: 'Large item' };
+  var EVENT_TONE = {
+    REQUESTED: 'blue', OFFERED: 'muted', OFFER_ACCEPTED: 'brand', OFFER_DECLINED: 'amber', OFFER_EXPIRED: 'amber',
+    OFFER_WITHDRAWN: 'muted', ASSIGNED: 'brand', PICKED_UP: 'blue', DELIVERED: 'brand', CANCELLED: 'red', NO_RIDER: 'red', RATED: 'amber'
+  };
+  var OFFER = {
+    OFFERED: ['amber', 'Waiting'], ACCEPTED: ['green', 'Accepted'], DECLINED: ['red', 'Declined'],
+    EXPIRED: ['gray', 'Expired'], WITHDRAWN: ['gray', 'Withdrawn']
+  };
+
+  function km(m) { return (Number(m || 0) / 1000).toFixed(1) + ' km'; }
+  function mins(s) { return Math.max(1, Math.round(Number(s || 0) / 60)) + ' min'; }
+  function stars(n) { n = Math.max(0, Math.min(5, Number(n) || 0)); return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n); }
+  function qs(o) {
+    var parts = [];
+    Object.keys(o).forEach(function (k) {
+      var v = o[k];
+      if (v !== '' && v !== null && v !== undefined) parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+    });
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+  function mapsLink(p) {
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.lat + ',' + p.lng);
+  }
+
+  function pager(p, action) {
+    if (!p.total) return '';
+    var last = Math.max(1, Math.ceil(p.total / p.pageSize));
+    var from = p.items.length ? (p.page - 1) * p.pageSize + 1 : 0;
+    var to = p.items.length ? from + p.items.length - 1 : 0;
+    return '<div class="pager"><span class="muted small">' + esc(from + '–' + to + ' of ' + p.total) + '</span><div class="pager-btns">' +
+      '<button class="btn btn-sm" data-action="' + action + '" data-page="' + (p.page - 1) + '"' + (p.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
+      '<span class="small muted">Page ' + esc(Math.min(p.page, last)) + ' of ' + esc(last) + '</span>' +
+      '<button class="btn btn-sm" data-action="' + action + '" data-page="' + (p.page + 1) + '"' + (p.page >= last ? ' disabled' : '') + '>Next</button></div></div>';
+  }
+
+  function stack(title, sub, cls) {
+    return '<div class="stack ' + (cls || '') + '"><div class="name">' + title + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+  }
+
+  function deliveryRow(d, withCustomer) {
+    return '<tr data-href="#/deliveries/' + esc(d.id) + '">' +
+      '<td>' + stack('<span class="mono-strong">' + esc(d.code) + '</span>', esc(PACKAGE[d.packageType] || d.packageType) + (d.fragile ? ' · Fragile' : '')) + '</td>' +
+      '<td>' + mapBadge(DSTATUS, d.status) + '</td>' +
+      (withCustomer ? '<td>' + stack(esc(d.customerName), esc(d.customerPhone)) + '</td>' : '') +
+      '<td>' + (d.riderName ? stack(esc(d.riderName), esc(d.riderPhone)) : '<span class="muted">—</span>') + '</td>' +
+      '<td><strong>' + esc(money(d.farePesewas)) + '</strong>' + (d.rating ? '<div class="sub stars" title="' + esc(d.rating) + '/5">' + esc(stars(d.rating)) + '</div>' : '') + '</td>' +
+      '<td class="route-cell">' + stack(esc(d.pickup.address), '→ ' + esc(d.dropoff.address)) + '</td>' +
+      '<td>' + stack(esc(fmtDateTime(d.requestedAt)), esc(ago(d.requestedAt)), 'quiet') + '</td></tr>';
+  }
+  function deliveriesTable(items, withCustomer) {
+    return '<div class="table-wrap"><table><thead><tr><th>Order</th><th>Status</th>' + (withCustomer ? '<th>Customer</th>' : '') +
+      '<th>Rider</th><th>Fare</th><th>Route</th><th>Requested</th></tr></thead><tbody>' +
+      items.map(function (d) { return deliveryRow(d, withCustomer); }).join('') + '</tbody></table></div>';
+  }
+
+  // ---- deliveries list
+  async function pageDeliveries() {
+    var t = state.del.tab;
+    render('<div class="page-head"><div><h1>Deliveries</h1><p class="muted" id="del-sub">Customer orders, newest first. Cash on delivery.</p></div></div>' +
+      '<section class="card"><div class="toolbar"><div class="tabs" role="tablist">' +
+      DEL_TABS.map(function (o) {
+        return '<button class="tab ' + (t === o[0] ? 'active' : '') + '" data-action="del-tab" data-tab="' + o[0] + '" role="tab">' + esc(o[1]) + '</button>';
+      }).join('') +
+      '</div><span class="muted small toolbar-hint">Search by order code, phone or customer name in the bar above.</span></div>' +
+      '<div id="del-body">' + skeletonRows(8) + '</div></section>');
+    await loadDeliveries();
+  }
+
+  async function loadDeliveries() {
+    var s = state.del, seq = ++s.seq;
+    try {
+      var p = await api('/admin/api/deliveries' + qs({ status: s.tab.toLowerCase(), q: s.q.trim(), page: s.page }));
+      var body = $('del-body');
+      if (seq !== s.seq || !body) return;
+      body.innerHTML = p.items.length
+        ? deliveriesTable(p.items, true) + pager(p, 'del-page')
+        : emptyState('box', s.q.trim() ? 'No orders match "' + s.q.trim() + '".' : 'No orders in this view yet.') + pager(p, 'del-page');
+      hydrateIcons(body);
+      var tabLabel = DEL_TABS.filter(function (o) { return o[0] === s.tab; })[0][1];
+      $('del-sub').textContent = p.total + ' order' + (p.total === 1 ? '' : 's') + (s.tab ? ' · ' + tabLabel : '') + (s.q.trim() ? ' matching "' + s.q.trim() + '"' : '') + ' · cash on delivery';
+    } catch (err) {
+      fail(err);
+      if (!err.auth && $('del-body') && seq === s.seq) $('del-body').innerHTML = emptyState('alert', 'Could not load deliveries. ' + err.message);
+    }
+  }
+
+  // ---- customers list
+  async function pageCustomers() {
+    render('<div class="page-head"><div><h1>Customers</h1><p class="muted" id="cust-sub">People who book deliveries in the customer app.</p></div></div>' +
+      '<section class="card"><div class="toolbar"><span class="muted small toolbar-hint" style="margin-left:0">Search by name, phone or email in the bar above.</span></div>' +
+      '<div id="cust-body">' + skeletonRows(8) + '</div></section>');
+    await loadCustomers();
+  }
+
+  async function loadCustomers() {
+    var s = state.cust, seq = ++s.seq;
+    try {
+      var p = await api('/admin/api/customers' + qs({ q: s.q.trim(), page: s.page }));
+      var body = $('cust-body');
+      if (seq !== s.seq || !body) return;
+      body.innerHTML = (p.items.length
+        ? '<div class="table-wrap"><table><thead><tr><th>Customer</th><th>Deliveries</th><th>Last delivery</th><th>Joined</th></tr></thead><tbody>' +
+          p.items.map(function (c) {
+            return '<tr data-href="#/customers/' + esc(c.id) + '">' +
+              '<td>' + personCell(c) + '</td>' +
+              '<td>' + stack(esc(c.deliveries), esc(c.delivered + ' delivered'), 'quiet') + '</td>' +
+              '<td>' + (c.lastDeliveryAt ? stack(esc(fmtDateTime(c.lastDeliveryAt)), esc(ago(c.lastDeliveryAt)), 'quiet') : '<span class="muted">Never</span>') + '</td>' +
+              '<td class="muted">' + esc(fmtDate(c.createdAt)) + '</td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : emptyState('user', s.q.trim() ? 'No customers match "' + s.q.trim() + '".' : 'No customers yet.')) + pager(p, 'cust-page');
+      hydrateIcons(body);
+      $('cust-sub').textContent = p.total + ' customer' + (p.total === 1 ? '' : 's') + (s.q.trim() ? ' matching "' + s.q.trim() + '"' : '');
+    } catch (err) {
+      fail(err);
+      if (!err.auth && $('cust-body') && seq === s.seq) $('cust-body').innerHTML = emptyState('alert', 'Could not load customers. ' + err.message);
+    }
+  }
+
+  // ---- drawer
+  var drawerKey = null;
+  function openDrawer(key, html) {
+    drawerKey = key;
+    var body = $('drawer-body');
+    body.innerHTML = html;
+    hydrateIcons(body);
+    var dlg = $('drawer');
+    if (!dlg.open) dlg.showModal();
+    body.scrollTop = 0;
+  }
+  function closeDrawer() {
+    drawerKey = null;
+    if ($('drawer').open) $('drawer').close();
+  }
+  function drawerHead(eyebrow, title, extra) {
+    return '<header class="drawer-head"><div class="grow"><div class="eyebrow">' + esc(eyebrow) + '</div><h2>' + title + '</h2>' + (extra || '') + '</div>' +
+      '<button class="icon-btn" data-action="close-drawer" aria-label="Close">' + ico('close') + '</button></header>';
+  }
+  function drawerLoading(eyebrow) {
+    return drawerHead(eyebrow, '<span class="skeleton" style="display:block;width:140px;height:20px"></span>') +
+      '<div class="drawer-sec"><div class="skeleton"></div><div class="skeleton" style="width:70%;margin-top:10px"></div><div class="skeleton" style="width:50%;margin-top:10px"></div></div>';
+  }
+  function drawerError(eyebrow, err) {
+    return drawerHead(eyebrow, 'Not available') + emptyState('alert', err.message);
+  }
+  function facts(rows) {
+    return '<dl class="facts">' + rows.map(function (f) { return '<div><dt>' + esc(f[0]) + '</dt><dd>' + f[1] + '</dd></div>'; }).join('') + '</dl>';
+  }
+  function tel(phone) { return phone ? '<a href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' : '—'; }
+
+  function stopBlock(letter, label, s) {
+    var sub = [s.landmark, s.gpsCode].filter(Boolean).map(esc).join(' · ');
+    return '<div class="stop"><span class="stop-pin stop-' + letter + '">' + letter.toUpperCase() + '</span><div class="grow">' +
+      '<div class="eyebrow">' + esc(label) + '</div><div class="title">' + esc(s.address) + '</div>' +
+      (sub ? '<div class="sub">' + sub + '</div>' : '') +
+      '<div class="sub">' + esc(s.contactName) + ' · ' + tel(s.contactPhone) + '</div>' +
+      '<a class="small ext" href="' + esc(mapsLink(s)) + '" target="_blank" rel="noopener noreferrer">Open in Google Maps ' + ico('external') + '</a>' +
+      '</div></div>';
+  }
+
+  function deliveryTimeline(events) {
+    if (!events.length) return emptyState('inbox', 'No events yet.');
+    return '<ul class="timeline">' + events.map(function (e) {
+      var tone = EVENT_TONE[e.kind] || 'muted';
+      var color = tone === 'brand' ? 'var(--brand)' : tone === 'muted' ? 'var(--muted)' : 'var(--' + tone + ')';
+      return '<li><span class="pip" style="background:' + color + '"></span><div class="t">' + esc(e.title) + '</div>' +
+        (e.detail ? '<div class="d">' + esc(e.detail) + '</div>' : '') +
+        '<div class="w">' + esc(fmtDateTime(e.at)) + ' · ' + esc(ago(e.at)) + '</div></li>';
+    }).join('') + '</ul>';
+  }
+
+  async function openDelivery(id) {
+    var key = 'delivery:' + id;
+    if (drawerKey === key && $('drawer').open) return;
+    openDrawer(key, drawerLoading('Delivery'));
+    try {
+      var d = await api('/admin/api/deliveries/' + encodeURIComponent(id));
+      if (drawerKey !== key) return;
+      var rows = [
+        ['Customer', '<a href="#/customers/' + esc(d.customerId) + '">' + esc(d.customerName) + '</a> · ' + tel(d.customerPhone)],
+        ['Rider', d.riderId ? '<a href="#/riders/' + esc(d.riderId) + '">' + esc(d.riderName) + '</a> · ' + tel(d.riderPhone) : '<span class="muted">Not assigned</span>'],
+        ['Fare', '<strong>' + esc(money(d.farePesewas)) + '</strong> <span class="muted small">(' + esc(money(d.baseFarePesewas)) + ' base + ' + esc(money(d.distanceFarePesewas)) + ' distance)</span>'],
+        ['Payment', esc(d.paymentMethod === 'CASH' ? 'Cash on delivery' : d.paymentMethod)],
+        ['Package', esc(PACKAGE[d.packageType] || d.packageType) + (d.fragile ? ' ' + badge('amber', 'Fragile') : '') + (d.hasPackagePhoto ? ' <span class="muted small">· photo attached</span>' : '')],
+        ['Trip', esc(km(d.distanceMeters) + ' by road · about ' + mins(d.durationSeconds))],
+        ['Requested', esc(fmtDateTime(d.requestedAt)) + ' <span class="muted small">(' + esc(ago(d.requestedAt)) + ')</span>']
+      ];
+      if (d.notes) rows.push(['Notes', esc(d.notes)]);
+      if (d.cancelReason) rows.push([d.status === 'NO_RIDER' ? 'Outcome' : 'Cancel reason', esc(d.cancelReason) + (d.cancelledBy ? ' <span class="muted small">(' + esc(d.cancelledBy.toLowerCase()) + ')</span>' : '')]);
+      if (d.rating) rows.push(['Rating', '<span class="stars">' + esc(stars(d.rating)) + '</span> ' + esc(d.rating + '/5') + (d.ratingTags && d.ratingTags.length ? ' <span class="muted small">· ' + esc(d.ratingTags.map(function (t) { return t.toLowerCase(); }).join(', ')) + '</span>' : '') + (d.ratingComment ? '<div class="muted small">“' + esc(d.ratingComment) + '”</div>' : '')]);
+      if (d.pinAttempts) rows.push(['Wrong PINs', badge(d.pinAttempts >= 3 ? 'red' : 'amber', d.pinAttempts + ' attempt' + (d.pinAttempts === 1 ? '' : 's'))]);
+      rows.push(['Order ID', '<span class="mono">' + esc(d.id) + '</span>']);
+
+      openDrawer(key,
+        drawerHead('Delivery', '<span class="mono-strong">' + esc(d.code) + '</span>', '<div class="drawer-badges">' + mapBadge(DSTATUS, d.status) + '</div>') +
+        '<section class="drawer-sec">' + facts(rows) + '</section>' +
+        '<section class="drawer-sec"><h3>Route</h3><div class="stops">' + stopBlock('p', 'Pickup', d.pickup) + stopBlock('d', 'Drop-off', d.dropoff) + '</div></section>' +
+        '<section class="drawer-sec flush"><h3>Timeline</h3>' + deliveryTimeline(d.timeline) + '</section>' +
+        '<section class="drawer-sec flush"><h3>Dispatch offers <span class="muted">(' + d.offers.length + ')</span></h3>' +
+          (d.offers.length ? '<div class="table-wrap"><table class="compact"><thead><tr><th>Rider</th><th>Distance</th><th>Result</th><th>Offered</th></tr></thead><tbody>' +
+            d.offers.map(function (f) {
+              return '<tr data-href="#/riders/' + esc(f.riderId) + '"><td><strong>' + esc(f.riderName) + '</strong></td><td class="muted">' + esc(km(f.distanceToPickupMeters)) + '</td>' +
+                '<td>' + mapBadge(OFFER, f.status) + '</td><td class="muted">' + esc(fmtDateTime(f.offeredAt)) + '</td></tr>';
+            }).join('') + '</tbody></table></div>' : emptyState('inbox', 'No rider has been offered this order.')) +
+        '</section>'
+      );
+    } catch (err) {
+      if (drawerKey !== key) return;
+      fail(err);
+      if (!err.auth) openDrawer(key, drawerError('Delivery', err));
+    }
+  }
+
+  async function openCustomer(id) {
+    var key = 'customer:' + id;
+    if (drawerKey === key && $('drawer').open) return;
+    openDrawer(key, drawerLoading('Customer'));
+    try {
+      var c = await api('/admin/api/customers/' + encodeURIComponent(id));
+      if (drawerKey !== key) return;
+      var stat = function (label, value) { return '<div class="mini"><span class="mini-v">' + esc(value) + '</span><span class="mini-l">' + esc(label) + '</span></div>'; };
+      openDrawer(key,
+        drawerHead('Customer', esc(c.fullName)) +
+        '<section class="drawer-sec">' + facts([
+          ['Phone', tel(c.phoneNumber)],
+          ['Email', c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : '—'],
+          ['Joined', esc(fmtDate(c.createdAt)) + ' <span class="muted small">(' + esc(ago(c.createdAt)) + ')</span>'],
+          ['Customer ID', '<span class="mono">' + esc(c.id) + '</span>']
+        ]) + '</section>' +
+        '<section class="drawer-sec"><div class="minis">' +
+          stat('Orders', c.deliveries) + stat('Delivered', c.delivered) + stat('Cancelled', c.cancelled) + stat('Active', c.active) + stat('Cash fares', money(c.deliveredFarePesewas)) +
+        '</div></section>' +
+        '<section class="drawer-sec flush"><h3>Orders' + (c.orders.length >= 100 ? ' <span class="muted">(latest 100)</span>' : '') + '</h3>' +
+          (c.orders.length ? '<div class="table-wrap"><table class="compact"><thead><tr><th>Order</th><th>Status</th><th>Fare</th><th>Requested</th></tr></thead><tbody>' +
+            c.orders.map(function (d) {
+              return '<tr data-href="#/deliveries/' + esc(d.id) + '"><td>' + stack('<span class="mono-strong">' + esc(d.code) + '</span>', esc(d.dropoff.address)) + '</td>' +
+                '<td>' + mapBadge(DSTATUS, d.status) + '</td><td><strong>' + esc(money(d.farePesewas)) + '</strong></td>' +
+                '<td class="muted">' + esc(fmtDateTime(d.requestedAt)) + '</td></tr>';
+            }).join('') + '</tbody></table></div>' : emptyState('box', 'No orders yet.')) +
+        '</section>'
+      );
+    } catch (err) {
+      if (drawerKey !== key) return;
+      fail(err);
+      if (!err.auth) openDrawer(key, drawerError('Customer', err));
+    }
+  }
+
+  // ---- live map
+  var MAPBOX_BASE = 'https://api.mapbox.com/mapbox-gl-js/v3.9.4/';
+  var TAKORADI = [-1.7554, 4.9016];
+  var live = { timer: null, map: null, markers: {}, token: undefined, loading: null, fitted: false, geo: null, gen: 0, last: null };
+
+  function loadMapbox() {
+    if (window.mapboxgl) return Promise.resolve();
+    if (live.loading) return live.loading;
+    live.loading = new Promise(function (resolve, reject) {
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = MAPBOX_BASE + 'mapbox-gl.css';
+      document.head.appendChild(css);
+      var s = document.createElement('script');
+      s.src = MAPBOX_BASE + 'mapbox-gl.js';
+      s.async = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () { live.loading = null; s.remove(); reject(new Error('Could not load the map library from api.mapbox.com.')); };
+      document.head.appendChild(s);
+    });
+    return live.loading;
+  }
+  function mapStyle() { return getTheme() === 'dark' ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12'; }
+
+  function stopLive() {
+    live.gen++;
+    if (live.timer) { clearInterval(live.timer); live.timer = null; }
+    if (live.map) { try { live.map.remove(); } catch (e) { /* ignore */ } live.map = null; }
+    live.markers = {};
+    live.fitted = false;
+  }
+
+  async function pageLive() {
+    stopLive();
+    var gen = live.gen;
+    render('<div class="page-head"><div><h1>Live map</h1><p class="muted">Riders online in the last 60 seconds and every active delivery. Refreshes every 10 seconds.</p></div>' +
+      '<div class="live-status"><span class="pulse" aria-hidden="true"></span><span id="live-updated" class="muted small">Loading…</span></div></div>' +
+      '<div class="grid kpis" id="live-kpis">' + [1, 2, 3, 4].map(function () {
+        return '<div class="card kpi"><div class="skeleton" style="width:50%"></div><div class="skeleton" style="width:30%;height:26px"></div></div>';
+      }).join('') + '</div>' +
+      '<div class="live">' +
+        '<section class="card map-card"><div id="live-map" class="map"></div>' +
+          '<div class="legend"><span><i class="lg lg-free"></i>Available rider</span><span><i class="lg lg-busy"></i>Rider on a job</span><span><i class="lg lg-p">P</i>Pickup</span><span><i class="lg lg-d">D</i>Drop-off</span></div></section>' +
+        '<aside class="card live-side">' +
+          '<div class="card-head"><h2>Online riders</h2><span id="live-riders-n"></span></div><ul class="list" id="live-riders">' + skeletonRows(3).replace(/^<ul class="list">|<\/ul>$/g, '') + '</ul>' +
+          '<div class="card-head card-head-mid"><h2>Active deliveries</h2><span id="live-del-n"></span></div><ul class="list" id="live-deliveries"></ul>' +
+        '</aside>' +
+      '</div>');
+
+    try {
+      if (live.token === undefined) {
+        var cfg = await api('/admin/api/config');
+        live.token = cfg.mapboxToken || null;
+      }
+      if (gen !== live.gen) return;
+      if (live.token) {
+        await loadMapbox();
+        if (gen !== live.gen || !$('live-map')) return;
+        initMap();
+      } else {
+        $('live-map').innerHTML = '<div class="map-empty">' + ico('map') + '<strong>Map not configured</strong>' +
+          '<span class="muted small">Set a public Mapbox token (pk.…) as ADMIN_MAPBOX_PUBLIC_TOKEN on the server to show the map. Riders and deliveries are still listed here.</span></div>';
+        hydrateIcons($('live-map'));
+      }
+    } catch (err) {
+      if (err.auth) return;
+      if ($('live-map')) {
+        $('live-map').innerHTML = '<div class="map-empty">' + ico('alert') + '<strong>Map unavailable</strong><span class="muted small">' + esc(err.message) + '</span></div>';
+        hydrateIcons($('live-map'));
+      }
+    }
+    if (gen !== live.gen) return;
+    await refreshLive(gen);
+    if (gen !== live.gen) return;
+    live.timer = setInterval(function () { refreshLive(gen); }, 10000);
+  }
+
+  function initMap() {
+    window.mapboxgl.accessToken = live.token;
+    live.map = new window.mapboxgl.Map({ container: 'live-map', style: mapStyle(), center: TAKORADI, zoom: 12, cooperativeGestures: false });
+    live.map.addControl(new window.mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+    live.map.on('style.load', addRouteLayer);
+    live.map.on('error', function (e) { if (window.console) console.warn('Map error', e && e.error ? e.error.message : e); });
+    if (live.last) syncMap(live.last);
+  }
+
+  function addRouteLayer() {
+    var map = live.map;
+    if (!map || map.getSource('routes')) return;
+    map.addSource('routes', { type: 'geojson', data: live.geo || { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'routes', type: 'line', source: 'routes',
+      layout: { 'line-cap': 'round' },
+      paint: {
+        'line-color': ['match', ['get', 'status'], 'SEARCHING', '#ff9f0a', '#4c8dff'],
+        'line-width': 3, 'line-opacity': 0.75, 'line-dasharray': [1.5, 1.5]
+      }
+    });
+  }
+
+  function popupNode(title, lines, href) {
+    var el = document.createElement('div');
+    el.className = 'mk-pop';
+    var t = document.createElement('strong');
+    t.textContent = title;
+    el.appendChild(t);
+    lines.forEach(function (l) { var d = document.createElement('div'); d.textContent = l; el.appendChild(d); });
+    if (href) {
+      var a = document.createElement('a');
+      a.href = href.url; a.textContent = href.label;
+      if (href.action) { a.setAttribute('data-action', href.action); a.setAttribute('data-id', href.id); }
+      el.appendChild(a);
+    }
+    return el;
+  }
+
+  function upsertMarker(key, lngLat, kind, text, pop) {
+    var m = live.markers[key];
+    if (!m) {
+      var el = document.createElement('div');
+      el.className = 'mk';
+      m = new window.mapboxgl.Marker({ element: el })
+        .setLngLat(lngLat)
+        .setPopup(new window.mapboxgl.Popup({ offset: 16, closeButton: false, maxWidth: '260px' }))
+        .addTo(live.map);
+      live.markers[key] = m;
+    } else {
+      m.setLngLat(lngLat);
+    }
+    var node = m.getElement();
+    node.setAttribute('data-kind', kind);
+    node.textContent = text;
+    m.getPopup().setDOMContent(pop);
+  }
+
+  function syncMap(snap) {
+    var map = live.map;
+    if (!map) return;
+    var seen = {};
+    var bounds = new window.mapboxgl.LngLatBounds();
+    var points = 0;
+    snap.deliveries.forEach(function (d) {
+      var lines = [d.customerName + ' · ' + money(d.farePesewas), (DSTATUS[d.status] || [0, d.status])[1] + (d.riderName ? ' · ' + d.riderName : '')];
+      var link = { url: '#', label: 'Open delivery', action: 'open-delivery', id: d.id };
+      seen['p:' + d.id] = seen['d:' + d.id] = true;
+      upsertMarker('p:' + d.id, [d.pickup.lng, d.pickup.lat], 'pickup', 'P', popupNode(d.code + ' · Pickup', [d.pickup.address].concat(lines), link));
+      upsertMarker('d:' + d.id, [d.dropoff.lng, d.dropoff.lat], 'dropoff', 'D', popupNode(d.code + ' · Drop-off', [d.dropoff.address].concat(lines), link));
+      bounds.extend([d.pickup.lng, d.pickup.lat]); bounds.extend([d.dropoff.lng, d.dropoff.lat]); points += 2;
+    });
+    snap.riders.forEach(function (r) {
+      seen['r:' + r.id] = true;
+      upsertMarker('r:' + r.id, [r.lng, r.lat], r.job ? 'busy' : 'free', initials(r.fullName),
+        popupNode(r.fullName, [r.phoneNumber, r.job ? 'On job ' + r.job.code + ' (' + (DSTATUS[r.job.status] || [0, r.job.status])[1] + ')' : 'Available', 'Seen ' + ago(r.updatedAt)],
+          r.job ? { url: '#', label: 'Open job', action: 'open-delivery', id: r.job.orderId } : { url: '#/riders/' + r.id, label: 'Rider profile' }));
+      bounds.extend([r.lng, r.lat]); points++;
+    });
+    Object.keys(live.markers).forEach(function (k) {
+      if (!seen[k]) { live.markers[k].remove(); delete live.markers[k]; }
+    });
+    live.geo = {
+      type: 'FeatureCollection',
+      features: snap.deliveries.map(function (d) {
+        return { type: 'Feature', properties: { status: d.status }, geometry: { type: 'LineString', coordinates: [[d.pickup.lng, d.pickup.lat], [d.dropoff.lng, d.dropoff.lat]] } };
+      })
+    };
+    try { var src = map.getSource('routes'); if (src) src.setData(live.geo); } catch (e) { /* style still loading */ }
+    if (!live.fitted && points) {
+      live.fitted = true;
+      if (points === 1) map.jumpTo({ center: bounds.getCenter(), zoom: 14 });
+      else map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 0 });
+    }
+  }
+
+  async function refreshLive(gen) {
+    if (gen !== live.gen || document.hidden) return;
+    try {
+      var snap = await api('/admin/api/live');
+      if (gen !== live.gen || !$('live-riders')) return;
+      live.last = snap;
+      renderLiveLists(snap);
+      syncMap(snap);
+      $('live-updated').textContent = 'Updated ' + new Date(snap.generatedAt).toLocaleTimeString('en-GB');
+      $('live-updated').parentNode.classList.remove('stale');
+    } catch (err) {
+      if (err.auth || !$('live-updated')) return;
+      $('live-updated').textContent = 'Connection problem, retrying… (' + err.message + ')';
+      $('live-updated').parentNode.classList.add('stale');
+    }
+  }
+
+  function renderLiveLists(snap) {
+    var busy = snap.riders.filter(function (r) { return r.job; }).length;
+    var searching = snap.deliveries.filter(function (d) { return d.status === 'SEARCHING'; }).length;
+    var kp = $('live-kpis');
+    kp.innerHTML =
+      kpi({ tone: 'brand', icon: 'users', label: 'Online riders', value: snap.riders.length, sub: (snap.riders.length - busy) + ' available · ' + busy + ' on a job' }) +
+      kpi({ tone: 'blue', icon: 'box', label: 'Active deliveries', value: snap.deliveries.length, sub: (snap.deliveries.length - searching) + ' with a rider' }) +
+      kpi({ tone: 'amber', icon: 'clock', label: 'Finding a rider', value: searching, sub: searching ? 'Waiting for a rider to accept' : 'Nobody waiting' }) +
+      kpi({ tone: searching && snap.riders.length === busy ? 'red' : 'brand', icon: 'check', label: 'Available riders', value: snap.riders.length - busy, sub: searching && snap.riders.length === busy ? 'Orders are waiting and no rider is free' : 'Online without a job' });
+    hydrateIcons(kp);
+
+    $('live-riders-n').innerHTML = badge(snap.riders.length ? 'green' : 'gray', snap.riders.length + ' online');
+    $('live-del-n').innerHTML = badge(snap.deliveries.length ? 'blue' : 'gray', snap.deliveries.length + ' active');
+
+    var rl = $('live-riders');
+    rl.innerHTML = snap.riders.length ? snap.riders.map(function (r) {
+      return '<li><button class="row-btn" data-action="fly" data-lng="' + esc(r.lng) + '" data-lat="' + esc(r.lat) + '">' +
+        '<span class="mk-dot ' + (r.job ? 'busy' : 'free') + '"></span><span class="grow"><div class="title">' + esc(r.fullName) + '</div>' +
+        '<div class="sub">' + esc(r.phoneNumber) + ' · seen ' + esc(ago(r.updatedAt)) + '</div></span>' +
+        (r.job ? badge('blue', r.job.code) : badge('green', 'Available')) + '</button></li>';
+    }).join('') : '<li>' + emptyState('users', 'No riders online right now.') + '</li>';
+
+    var dl = $('live-deliveries');
+    dl.innerHTML = snap.deliveries.length ? snap.deliveries.map(function (d) {
+      return '<li><button class="row-btn" data-action="open-delivery" data-id="' + esc(d.id) + '" data-lng="' + esc(d.pickup.lng) + '" data-lat="' + esc(d.pickup.lat) + '">' +
+        '<span class="grow"><div class="title"><span class="mono-strong">' + esc(d.code) + '</span> · ' + esc(money(d.farePesewas)) + '</div>' +
+        '<div class="sub">' + esc(d.pickup.address) + ' → ' + esc(d.dropoff.address) + '</div>' +
+        '<div class="sub">' + esc(d.riderName || 'No rider yet') + ' · requested ' + esc(ago(d.requestedAt)) + '</div></span>' +
+        mapBadge(DSTATUS, d.status) + '</button></li>';
+    }).join('') : '<li>' + emptyState('box', 'No active deliveries.') + '</li>';
+    hydrateIcons(rl); hydrateIcons(dl);
+  }
+
+  function flyTo(el) {
+    var lng = Number(el.getAttribute('data-lng')), lat = Number(el.getAttribute('data-lat'));
+    if (live.map && isFinite(lng) && isFinite(lat)) live.map.flyTo({ center: [lng, lat], zoom: Math.max(live.map.getZoom(), 15) });
+  }
+
+  // Active-deliveries badge in the sidebar.
+  function updateActiveCount() {
+    return api('/admin/api/deliveries?status=active&page=1').then(function (p) {
+      var el = $('nav-active-count');
+      el.textContent = p.total;
+      el.hidden = !p.total;
+    });
+  }
+
   // ---------------------------------------------------------------- auth views
   function showLogin(message) {
     $('app').hidden = true;
@@ -749,7 +1282,8 @@
     $('app').hidden = false;
     $('admin-email').textContent = session.email || '';
     $('admin-initials').textContent = initials((session.email || 'A').split('@')[0].replace(/[._-]+/g, ' '));
-    route();
+    route(true);
+    updateActiveCount().catch(function () { /* nav count only */ });
   }
 
   $('login-form').addEventListener('submit', async function (e) {
@@ -792,8 +1326,14 @@
           $('avatar-btn').setAttribute('aria-expanded', String(!menu.hidden));
           return;
         }
-        case 'logout': clearSession(); state.riders = null; $('admin-menu').hidden = true; showLogin('Signed out.'); return;
-        case 'refresh': state.riders = null; route(); return;
+        case 'logout': clearSession(); state.riders = null; stopLive(); closeDrawer(); $('admin-menu').hidden = true; showLogin('Signed out.'); return;
+        case 'refresh': state.riders = null; route(true); updateActiveCount().catch(function () { /* ignore */ }); return;
+        case 'del-tab': state.del.tab = el.getAttribute('data-tab'); state.del.page = 1; pageDeliveries(); return;
+        case 'del-page': state.del.page = Math.max(1, Number(el.getAttribute('data-page')) || 1); loadDeliveries(); window.scrollTo(0, 0); return;
+        case 'cust-page': state.cust.page = Math.max(1, Number(el.getAttribute('data-page')) || 1); loadCustomers(); window.scrollTo(0, 0); return;
+        case 'close-drawer': closeDrawer(); return;
+        case 'open-delivery': e.preventDefault(); flyTo(el); openDelivery(el.getAttribute('data-id')); return;
+        case 'fly': flyTo(el); return;
         case 'chart': state.chart = el.getAttribute('data-chart'); pageOverview(); return;
         case 'rider-tab': state.riderTab = el.getAttribute('data-tab'); pageRiders(); return;
         case 'pay-tab': state.payTab = el.getAttribute('data-tab'); pagePayments(); return;
@@ -823,8 +1363,19 @@
 
   var searchTimer = null;
   $('global-search').addEventListener('input', function (e) {
-    state.search = e.target.value;
+    var page = currentPage();
     clearTimeout(searchTimer);
+    if (page === 'deliveries' || page === 'customers') {
+      var s = page === 'deliveries' ? state.del : state.cust;
+      s.q = e.target.value;
+      s.page = 1;
+      searchTimer = setTimeout(function () {
+        if (/^#\/(deliveries|customers)\/.+/.test(location.hash)) location.hash = '#/' + page;
+        if (page === 'deliveries') loadDeliveries(); else loadCustomers();
+      }, 300);
+      return;
+    }
+    state.search = e.target.value;
     searchTimer = setTimeout(function () {
       if (!/^#\/riders\/?$/.test(location.hash)) { state.riderTab = 'ALL'; location.hash = '#/riders'; }
       else refreshRidersTable();
@@ -840,11 +1391,21 @@
   });
 
   $('viewer').addEventListener('click', function (e) { if (e.target.id === 'viewer') $('viewer').close(); });
+  $('drawer').addEventListener('click', function (e) { if (e.target.id === 'drawer') $('drawer').close(); });
+  $('drawer').addEventListener('close', function () {
+    drawerKey = null;
+    // Closing a linked drawer (#/deliveries/<id>) returns to the list without reloading it.
+    var m = /^#\/(deliveries|customers)\/.+/.exec(location.hash);
+    if (m) location.hash = '#/' + m[1];
+  });
   window.addEventListener('hashchange', function () { if (loadSession()) route(); });
 
   // Keep the queue badge fresh while the portal is open.
   setInterval(function () {
-    if (!document.hidden && loadSession() && !$('app').hidden) loadRiders(true).catch(function () { /* ignore */ });
+    if (!document.hidden && loadSession() && !$('app').hidden) {
+      loadRiders(true).catch(function () { /* ignore */ });
+      updateActiveCount().catch(function () { /* ignore */ });
+    }
   }, 60000);
 
   // ---------------------------------------------------------------- boot

@@ -3,13 +3,13 @@ dotenv.config();
 
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import helmet from 'helmet';
 import * as express from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { productionEnvProblems } from './config/production-env';
 import { configureBodyParsers } from './config/body-parsers';
 import { cloudflareAccessFromEnv } from './admin/cloudflare-access';
+import { securityHeaders } from './config/security-headers';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -34,8 +34,8 @@ async function bootstrap(): Promise<void> {
     app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
   }
 
-  // Security headers via Helmet
-  app.use(helmet());
+  // Security headers via Helmet (strict CSP; /admin also allows Mapbox for the Live map).
+  app.use(securityHeaders());
 
   // The admin portal can also be served on its own hostname (e.g. ghanadash-admin.<domain>),
   // pointing at this same server. On that host, "/" opens the portal, and the public API is

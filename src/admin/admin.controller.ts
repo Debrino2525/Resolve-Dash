@@ -25,15 +25,32 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { authThrottleLimit, throttleTtlMs } from '../common/throttle.config';
 import { AdminAuthService, AdminSession } from './admin-auth.service';
 import { AdminInsightsService } from './admin-insights.service';
+import {
+  AdminOperationsService,
+  parseDeliveryFilter,
+  parsePage,
+} from './admin-operations.service';
 import { readPortalAsset } from './admin-portal.assets';
 import { AdminService } from './admin.service';
 import {
+  AdminCustomer,
+  AdminCustomerDetail,
   AdminDashboard,
+  AdminDelivery,
+  AdminDeliveryDetail,
+  AdminLiveSnapshot,
   AdminPayment,
   AdminRiderDetail,
   AdminRiderOverview,
   AdminStats,
+  Paged,
 } from './admin.types';
+
+/** Public Mapbox token for the Live map (browser-safe pk.* only; never the server token). */
+export function adminMapboxPublicToken(): string | null {
+  const token = process.env.ADMIN_MAPBOX_PUBLIC_TOKEN?.trim();
+  return token && token.startsWith('pk.') ? token : null;
+}
 
 const reviewSchema = z.object({
   decision: z.enum(['APPROVED', 'REJECTED']),
@@ -54,6 +71,7 @@ export class AdminController {
     private readonly adminAuthService: AdminAuthService,
     private readonly riderDocuments: RiderDocumentsService,
     private readonly insights: AdminInsightsService,
+    private readonly operations: AdminOperationsService,
   ) {}
 
   /** Public: exchanges admin email + password for a Supabase access token (admin role only). */
@@ -91,6 +109,61 @@ export class AdminController {
   @UseGuards(AdminGuard)
   getPayments(@Query('status') status?: string): Promise<AdminPayment[]> {
     return this.insights.listPayments(status?.toUpperCase());
+  }
+
+  /** Orders, newest first. status: active | delivered | cancelled (incl. no rider); q: code, phone or name. */
+  @Get('api/deliveries')
+  @UseGuards(AdminGuard)
+  listDeliveries(
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+  ): Promise<Paged<AdminDelivery>> {
+    return this.operations.listDeliveries({
+      filter: parseDeliveryFilter(typeof status === 'string' ? status : undefined),
+      q: typeof q === 'string' ? q : undefined,
+      page: parsePage(page),
+    });
+  }
+
+  /** One order with its timeline and offer history (no PIN, no photo paths). */
+  @Get('api/deliveries/:id')
+  @UseGuards(AdminGuard)
+  getDelivery(@Param('id', ParseUUIDPipe) id: string): Promise<AdminDeliveryDetail> {
+    return this.operations.getDelivery(id);
+  }
+
+  @Get('api/customers')
+  @UseGuards(AdminGuard)
+  listCustomers(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+  ): Promise<Paged<AdminCustomer>> {
+    return this.operations.listCustomers({
+      q: typeof q === 'string' ? q : undefined,
+      page: parsePage(page),
+    });
+  }
+
+  @Get('api/customers/:id')
+  @UseGuards(AdminGuard)
+  getCustomer(@Param('id', ParseUUIDPipe) id: string): Promise<AdminCustomerDetail> {
+    return this.operations.getCustomer(id);
+  }
+
+  /** Online riders (presence updated in the last 60 s) and active deliveries, for the Live map. */
+  @Get('api/live')
+  @UseGuards(AdminGuard)
+  @Header('Cache-Control', 'no-store')
+  getLive(): Promise<AdminLiveSnapshot> {
+    return this.operations.getLive();
+  }
+
+  /** Browser settings for the portal (public Mapbox token; null when not configured). */
+  @Get('api/config')
+  @UseGuards(AdminGuard)
+  getConfig(): { mapboxToken: string | null } {
+    return { mapboxToken: adminMapboxPublicToken() };
   }
 
   @Post('api/riders/:id/approve')

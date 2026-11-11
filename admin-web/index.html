@@ -45,10 +45,10 @@
         <a href="#/queue" data-route="queue"><span class="ico" data-icon="shield"></span>Verification queue <span class="count" id="nav-queue-count" hidden></span></a>
         <a href="#/riders" data-route="riders"><span class="ico" data-icon="users"></span>Riders</a>
         <a href="#/payments" data-route="payments"><span class="ico" data-icon="card"></span>Payments</a>
-        <div class="nav-label">Coming soon</div>
-        <span class="nav-disabled"><span class="ico" data-icon="box"></span>Deliveries <span class="soon">Soon</span></span>
-        <span class="nav-disabled"><span class="ico" data-icon="user"></span>Customers <span class="soon">Soon</span></span>
-        <span class="nav-disabled"><span class="ico" data-icon="map"></span>Live map <span class="soon">Soon</span></span>
+        <div class="nav-label">Operations</div>
+        <a href="#/deliveries" data-route="deliveries"><span class="ico" data-icon="box"></span>Deliveries <span class="count count-blue" id="nav-active-count" title="Active deliveries" hidden></span></a>
+        <a href="#/customers" data-route="customers"><span class="ico" data-icon="user"></span>Customers</a>
+        <a href="#/live" data-route="live"><span class="ico" data-icon="map"></span>Live map</a>
       </nav>
       <div class="sidebar-foot muted">v1 · Ghana</div>
     </aside>
@@ -102,6 +102,11 @@
   <dialog id="viewer" class="viewer" aria-label="Document viewer">
     <button class="icon-btn viewer-close" data-action="close-viewer" aria-label="Close"><span class="ico" data-icon="close"></span></button>
     <img id="viewer-img" alt="">
+  </dialog>
+
+  <!-- Detail drawer (delivery or customer) -->
+  <dialog id="drawer" class="drawer" aria-label="Details">
+    <div id="drawer-body" class="drawer-inner"></div>
   </dialog>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>

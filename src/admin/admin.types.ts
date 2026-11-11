@@ -98,3 +98,159 @@ export interface AdminPayment {
   failureReason: string | null;
   periodEnd: string | null;
 }
+
+// ---------------------------------------------------------------- deliveries, customers, live
+
+export type DeliveryStatus =
+  'SEARCHING' | 'ASSIGNED' | 'PICKED_UP' | 'DELIVERED' | 'CANCELLED' | 'NO_RIDER';
+
+/** Portal filter groups: ACTIVE = SEARCHING/ASSIGNED/PICKED_UP, CANCELLED includes NO_RIDER. */
+export type DeliveryFilter = 'ACTIVE' | 'DELIVERED' | 'CANCELLED';
+
+export interface Paged<T> {
+  items: T[];
+  total: number;
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminStopPoint {
+  lat: number;
+  lng: number;
+  address: string;
+  landmark: string | null;
+}
+
+export interface AdminStop extends AdminStopPoint {
+  gpsCode: string | null;
+  contactName: string;
+  contactPhone: string;
+}
+
+/** One order row in the admin portal. Never carries the delivery PIN or storage paths. */
+export interface AdminDelivery {
+  id: string;
+  code: string;
+  status: DeliveryStatus;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  riderId: string | null;
+  riderName: string | null;
+  riderPhone: string | null;
+  farePesewas: number;
+  packageType: string;
+  fragile: boolean;
+  distanceMeters: number;
+  pickup: AdminStopPoint;
+  dropoff: AdminStopPoint;
+  requestedAt: string;
+  assignedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  cancelledBy: string | null;
+  rating: number | null;
+}
+
+export interface AdminOffer {
+  id: string;
+  riderId: string;
+  riderName: string;
+  status: 'OFFERED' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'WITHDRAWN';
+  distanceToPickupMeters: number;
+  offeredAt: string;
+  expiresAt: string;
+  respondedAt: string | null;
+}
+
+export interface DeliveryEvent {
+  kind:
+    | 'REQUESTED'
+    | 'OFFERED'
+    | 'OFFER_ACCEPTED'
+    | 'OFFER_DECLINED'
+    | 'OFFER_EXPIRED'
+    | 'OFFER_WITHDRAWN'
+    | 'ASSIGNED'
+    | 'PICKED_UP'
+    | 'DELIVERED'
+    | 'CANCELLED'
+    | 'NO_RIDER'
+    | 'RATED';
+  title: string;
+  detail: string | null;
+  at: string;
+}
+
+export interface AdminDeliveryDetail extends Omit<AdminDelivery, 'pickup' | 'dropoff'> {
+  pickup: AdminStop;
+  dropoff: AdminStop;
+  notes: string | null;
+  durationSeconds: number;
+  baseFarePesewas: number;
+  distanceFarePesewas: number;
+  paymentMethod: string;
+  ratingTags: string[] | null;
+  ratingComment: string | null;
+  /** Wrong PIN entries by the rider (the PIN itself is never exposed). */
+  pinAttempts: number;
+  hasPackagePhoto: boolean;
+  /** Oldest first. */
+  timeline: DeliveryEvent[];
+  /** Oldest first. */
+  offers: AdminOffer[];
+}
+
+export interface AdminCustomer {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+  email: string | null;
+  createdAt: string;
+  deliveries: number;
+  delivered: number;
+  lastDeliveryAt: string | null;
+}
+
+export interface AdminCustomerDetail extends AdminCustomer {
+  cancelled: number;
+  active: number;
+  /** Total fare of delivered orders (cash collected by riders). */
+  deliveredFarePesewas: number;
+  /** Newest first, at most 100. */
+  orders: AdminDelivery[];
+}
+
+export interface LiveRider {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+  lat: number;
+  lng: number;
+  heading: number | null;
+  updatedAt: string;
+  /** The rider's current job (ASSIGNED or PICKED_UP), if any. */
+  job: { orderId: string; code: string; status: DeliveryStatus } | null;
+}
+
+export interface LiveDelivery {
+  id: string;
+  code: string;
+  status: DeliveryStatus;
+  riderId: string | null;
+  riderName: string | null;
+  customerName: string;
+  farePesewas: number;
+  pickup: AdminStopPoint;
+  dropoff: AdminStopPoint;
+  requestedAt: string;
+}
+
+export interface AdminLiveSnapshot {
+  generatedAt: string;
+  riders: LiveRider[];
+  deliveries: LiveDelivery[];
+}
