@@ -10,7 +10,8 @@
       "environment": "development",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -23,7 +24,8 @@
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ZftSxRCAk9eIXh9JLad5lg_cwRWuwdP",
         "EXPO_PUBLIC_SUPABASE_URL": "https://tllhlkpeepkopzxvxhvc.supabase.co"
       },
-      "environment": "preview"
+      "environment": "preview",
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -36,7 +38,8 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "environment": "production"
+      "environment": "production",
+      "channel": "production"
     }
   },
   "submit": {

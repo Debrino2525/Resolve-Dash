@@ -1,4 +1,5 @@
-import { NativeModules, PermissionsAndroid, Platform, TurboModuleRegistry } from 'react-native';
+import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
+import { NativeModules, TurboModuleRegistry } from 'react-native';
 
 /**
  * Voice calls through Agora (customer ↔ rider), audio only.
@@ -51,15 +52,23 @@ export function callingAvailable(): boolean {
   return loadAgora() !== null;
 }
 
-/** Asks for the microphone (Android at run time; iOS asks on first use). */
-export async function ensureMicrophone(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
-    title: 'Microphone for calls',
-    message: 'GhanaDash needs the microphone so you can talk during a delivery call.',
-    buttonPositive: 'Allow',
-  });
-  return res === PermissionsAndroid.RESULTS.GRANTED;
+export type MicrophoneAccess = 'granted' | 'denied' | 'blocked';
+
+/**
+ * Microphone for calls (Android and iOS). 'blocked' means the phone won't show the prompt again
+ * (denied before, or "don't ask again"): the person has to switch it on in Settings.
+ */
+export async function ensureMicrophone(): Promise<MicrophoneAccess> {
+  try {
+    const current = await getRecordingPermissionsAsync();
+    if (current.granted) return 'granted';
+    if (!current.canAskAgain) return 'blocked';
+    const asked = await requestRecordingPermissionsAsync();
+    if (asked.granted) return 'granted';
+    return asked.canAskAgain ? 'denied' : 'blocked';
+  } catch {
+    return 'denied';
+  }
 }
 
 /** One call: join, mute, speaker, leave. */

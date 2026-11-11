@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, Vibration, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, StyleSheet, Text, TouchableOpacity, Vibration, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CallJoinInfo, callingAvailable, ensureMicrophone, VoiceCall } from '../services/voiceCall';
 
@@ -37,7 +37,7 @@ export interface CallScreenProps {
   onClose: () => void;
 }
 
-type Phase = 'idle' | 'calling' | 'ringing' | 'connecting' | 'active' | 'ended' | 'unavailable';
+type Phase = 'idle' | 'calling' | 'ringing' | 'connecting' | 'active' | 'ended' | 'unavailable' | 'microphone';
 
 const ENDED_TEXT: Record<NonNullable<CallState['endReason']>, string> = {
   HUNG_UP: 'Call ended',
@@ -63,6 +63,8 @@ export function CallScreen({
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  /** The phone won't show the microphone prompt again: Settings is the only way. */
+  const [micBlocked, setMicBlocked] = useState(false);
   const call = useRef<VoiceCall | null>(null);
   const callId = useRef<string | null>(null);
   const player = useAudioPlayer(RING);
@@ -129,8 +131,10 @@ export function CallScreen({
     }
     setPhase('calling');
     void (async () => {
-      if (!(await ensureMicrophone())) {
-        finish('Allow the microphone to make calls', false);
+      const mic = await ensureMicrophone();
+      if (mic !== 'granted') {
+        setMicBlocked(mic === 'blocked');
+        setPhase('microphone');
         return;
       }
       try {
@@ -147,7 +151,7 @@ export function CallScreen({
 
   // The other phone hung up, declined, or the ring timed out.
   useEffect(() => {
-    if (!visible || !polled || phase === 'ended' || phase === 'unavailable') return;
+    if (!visible || !polled || phase === 'ended' || phase === 'unavailable' || phase === 'microphone') return;
     if (callId.current && polled.id !== callId.current) return;
     if (polled.status === 'ENDED') finish(polled.endReason ? ENDED_TEXT[polled.endReason] : 'Call ended', false);
   }, [visible, polled, phase, finish]);
@@ -171,8 +175,11 @@ export function CallScreen({
   const accept = async (): Promise<void> => {
     stopRing();
     setPhase('connecting');
-    if (!(await ensureMicrophone())) {
-      finish('Allow the microphone to take calls', true);
+    const mic = await ensureMicrophone();
+    if (mic !== 'granted') {
+      void api.end().catch(() => undefined);
+      setMicBlocked(mic === 'blocked');
+      setPhase('microphone');
       return;
     }
     try {
@@ -195,7 +202,11 @@ export function CallScreen({
             ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
             : phase === 'unavailable'
               ? 'In-app calling works in the installed GhanaDash app'
-              : (message ?? '');
+              : phase === 'microphone'
+                ? micBlocked
+                  ? 'Microphone is off for GhanaDash. Turn it on in Settings (Permissions → Microphone), then call again.'
+                  : 'GhanaDash needs your microphone so you can talk. Allow it when your phone asks.'
+                : (message ?? '');
 
   const initials = otherName
     .split(/\s+/)
@@ -260,6 +271,45 @@ export function CallScreen({
               rotate
               onPress={() => finish(phase === 'active' ? 'Call ended' : 'Call cancelled', true)}
             />
+          </View>
+        )}
+
+        {phase === 'microphone' && (
+          <View style={styles.controls}>
+            {micBlocked ? (
+              <TouchableOpacity style={styles.wide} onPress={() => void Linking.openSettings()} accessibilityRole="button">
+                <Ionicons name="settings-outline" size={18} color="#03140A" />
+                <Text style={styles.wideText}>Open settings</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.wide}
+                onPress={() => {
+                  setPhase('idle');
+                  setTimeout(onClose, 0);
+                }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="mic" size={18} color="#03140A" />
+                <Text style={styles.wideText}>OK, I'll allow it next time</Text>
+              </TouchableOpacity>
+            )}
+            {onPhoneCall && (
+              <TouchableOpacity
+                style={[styles.wide, styles.wideGhost]}
+                onPress={() => {
+                  onClose();
+                  onPhoneCall();
+                }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="call" size={18} color="#F5F7FA" />
+                <Text style={[styles.wideText, { color: '#F5F7FA' }]}>Call by phone instead</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[styles.wide, styles.wideGhost]} onPress={onClose} accessibilityRole="button">
+              <Text style={[styles.wideText, { color: '#F5F7FA' }]}>Close</Text>
+            </TouchableOpacity>
           </View>
         )}
 
