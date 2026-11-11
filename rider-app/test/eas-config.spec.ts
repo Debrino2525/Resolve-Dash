@@ -18,7 +18,7 @@ describe('Rider App EAS & Routing Configuration Integrity', () => {
       };
     };
 
-    expect(appJson.expo.extra.eas.projectId).toBe('d050d3ed-baaf-49d0-b629-14c7bc7fac95');
+    expect(appJson.expo.extra.eas.projectId).toBe('e934b098-16f8-4e65-8581-7c9cf77d5816');
   });
 
   it('validates app.json registers the ghanadash-rider:// deep linking scheme', () => {

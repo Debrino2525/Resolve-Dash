@@ -1,12 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Camera, LineLayer, LocationPuck, MapState, MapView, MarkerView, ShapeSource, StyleImport } from '@rnmapbox/maps';
 import React, { useEffect, useRef } from 'react';
-import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region, UrlTile } from 'react-native-maps';
-import { CLEAN_MAP } from './mapStyle';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { GHANA_DEFAULT_CENTER, LatLng } from '../services/location';
-import { mapboxTileUrl } from '../services/routing';
 import { Colors, Elevation, Radii, TOUCH_TARGET } from '../theme/theme';
-import { regionForPoints } from '../utils/geo';
+import { STANDARD_STYLE, zoomForDelta } from './mapSetup';
 
 export interface DispatchMapProps {
   rider: LatLng | null;
@@ -25,27 +23,15 @@ export interface DispatchMapProps {
   navigationCamera?: { center: LatLng; heading: number } | null;
 }
 
-/** Fallback dark style for Google Maps when no Mapbox token is configured (Android). */
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#0f141c' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8a96a8' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0b0f15' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1d2532' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2a3446' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#08131f' }] },
-];
-
-const RIDER_ZOOM = { latitudeDelta: 0.012, longitudeDelta: 0.012 };
-
-/**
- * Turn-by-turn chase camera. Google Maps (Android) uses `zoom`; Apple Maps (iOS) ignores zoom
- * and needs `altitude` (metres above the ground) instead, so both are set.
- */
-function navCamera(c: { center: LatLng; heading: number }) {
-  return { center: c.center, heading: c.heading, pitch: 45, zoom: 17.5, altitude: 320 };
-}
-const TILE_URL = mapboxTileUrl();
+/** Dark rider map: Mapbox Standard at night, without shop/business or transit labels. */
+const RIDER_BASEMAP = {
+  lightPreset: 'night' as const,
+  showPointOfInterestLabels: false,
+  showTransitLabels: false,
+  show3dObjects: false,
+};
+const RIDER_ZOOM = zoomForDelta(0.012);
+const pos = (p: LatLng): [number, number] => [p.longitude, p.latitude];
 
 export function DispatchMap({
   rider,
@@ -58,132 +44,134 @@ export function DispatchMap({
   onMapTouch,
   navigationCamera,
 }: DispatchMapProps): React.JSX.Element {
-  const map = useRef<MapView>(null);
+  const camera = useRef<Camera>(null);
   const centre = rider ?? GHANA_DEFAULT_CENTER;
   const stops = [rider, pickup, dropoff].filter((p): p is LatLng => Boolean(p));
-  const line = route && route.length >= 2 ? route : stops;
-
+  const hasRoute = Boolean(route && route.length >= 2);
+  const line = hasRoute ? route! : stops;
   const navigating = Boolean(navigationCamera);
+  const padding = { paddingTop: topInset, paddingBottom: bottomInset, paddingLeft: 0, paddingRight: 0 };
+
+  const frame = (pts: LatLng[], duration: number): void => {
+    const lats = pts.map((p) => p.latitude);
+    const lngs = pts.map((p) => p.longitude);
+    camera.current?.fitBounds(
+      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...lngs), Math.min(...lats)],
+      [topInset + 48, 48, bottomInset + 48, 48],
+      duration,
+    );
+  };
+
+  const chase = (c: { center: LatLng; heading: number }, duration: number): void => {
+    camera.current?.setCamera({
+      centerCoordinate: pos(c.center),
+      heading: c.heading,
+      pitch: 45,
+      zoomLevel: 17.5,
+      padding,
+      animationDuration: duration,
+    });
+  };
 
   // Turn-by-turn: chase camera on every position update.
   useEffect(() => {
-    if (!navigationCamera) return;
-    map.current?.animateCamera(navCamera(navigationCamera), { duration: 900 });
+    if (navigationCamera) chase(navigationCamera, 900);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigationCamera]);
 
   // Leaving navigation: back to a flat, north-up view of the job.
   useEffect(() => {
     if (navigating) return;
-    map.current?.animateCamera({ heading: 0, pitch: 0 }, { duration: 400 });
+    camera.current?.setCamera({ heading: 0, pitch: 0, animationDuration: 400 });
   }, [navigating]);
 
   // Frame the whole job when it appears or its route arrives.
   useEffect(() => {
     if (navigating) return;
-    const pts = route && route.length >= 2 ? route : stops;
-    if (pickup && pts.length >= 2) {
-      map.current?.animateToRegion(regionForPoints(pts, 1.35), 600);
-    }
+    if (pickup && line.length >= 2) frame(line, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickup?.latitude, dropoff?.latitude, route?.length]);
 
   // Follow the rider while idle on duty.
   useEffect(() => {
     if (follow && rider && !pickup) {
-      map.current?.animateToRegion({ ...rider, ...RIDER_ZOOM }, 500);
+      camera.current?.setCamera({ centerCoordinate: pos(rider), zoomLevel: RIDER_ZOOM, padding, animationDuration: 500 });
     }
-  }, [follow, rider, pickup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow, rider?.latitude, rider?.longitude, pickup]);
 
   const recenter = (): void => {
-    if (navigationCamera) {
-      map.current?.animateCamera(navCamera(navigationCamera), { duration: 500 });
-      return;
-    }
-    const region: Region =
-      line.length >= 2 ? regionForPoints(line, 1.35) : { ...centre, ...RIDER_ZOOM };
-    map.current?.animateToRegion(region, 500);
+    if (navigationCamera) return chase(navigationCamera, 500);
+    if (line.length >= 2) return frame(line, 500);
+    camera.current?.setCamera({ centerCoordinate: pos(centre), zoomLevel: RIDER_ZOOM, padding, animationDuration: 500 });
   };
+
+  const lineShape =
+    line.length >= 2
+      ? {
+          type: 'Feature' as const,
+          properties: {},
+          geometry: { type: 'LineString' as const, coordinates: line.map(pos) },
+        }
+      : null;
 
   return (
     <View style={StyleSheet.absoluteFill}>
       <MapView
-        ref={map}
         style={StyleSheet.absoluteFill}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        // With Mapbox tiles, hide the native base map so both platforms look identical.
-        mapType={
-          TILE_URL && Platform.OS === 'android'
-            ? 'none'
-            : Platform.OS === 'ios'
-              ? 'mutedStandard'
-              : 'standard'
-        }
-        customMapStyle={!TILE_URL && Platform.OS === 'android' ? [...DARK_MAP_STYLE, ...CLEAN_MAP] : undefined}
-        userInterfaceStyle="dark"
-        initialRegion={{
-          ...centre,
-          latitudeDelta: rider ? RIDER_ZOOM.latitudeDelta : 0.25,
-          longitudeDelta: rider ? RIDER_ZOOM.longitudeDelta : 0.25,
-        }}
-        showsUserLocation={Boolean(rider)}
-        showsMyLocationButton={false}
-        showsCompass={false}
-        showsPointsOfInterests={false}
-        showsBuildings={false}
-        showsTraffic={false}
-        showsIndoors={false}
-        toolbarEnabled={false}
+        styleURL={STANDARD_STYLE}
+        logoEnabled
+        logoPosition={{ bottom: bottomInset + 6, left: 8 }}
+        attributionEnabled
+        attributionPosition={{ bottom: bottomInset + 6, right: 72 }}
+        scaleBarEnabled={false}
+        compassEnabled={false}
         rotateEnabled={false}
         pitchEnabled={false}
-        mapPadding={{ top: topInset, bottom: bottomInset, left: 0, right: 0 }}
         onPress={onMapTouch}
-        onPanDrag={onMapTouch}
+        onCameraChanged={(state: MapState) => {
+          if (state.gestures.isGestureActive) onMapTouch?.();
+        }}
         accessibilityLabel="Map showing your position and current delivery"
       >
-        {TILE_URL && (
-          <UrlTile
-            urlTemplate={TILE_URL}
-            maximumZ={20}
-            tileSize={256}
-            shouldReplaceMapContent
-            zIndex={-1}
-          />
-        )}
+        <StyleImport id="basemap" existing config={RIDER_BASEMAP} />
+        <Camera
+          ref={camera}
+          padding={padding}
+          defaultSettings={{ centerCoordinate: pos(centre), zoomLevel: rider ? RIDER_ZOOM : zoomForDelta(0.25) }}
+        />
+        {rider && <LocationPuck puckBearingEnabled puckBearing="heading" />}
 
-        {line.length >= 2 && (
-          <Polyline
-            coordinates={line}
-            strokeColor={Colors.roadRoute}
-            strokeWidth={5}
-            lineCap="round"
-            lineJoin="round"
-            lineDashPattern={route && route.length >= 2 ? undefined : [8, 6]}
-          />
+        {lineShape && (
+          <ShapeSource id="jobLine" shape={lineShape}>
+            <LineLayer
+              id="jobLineLayer"
+              style={{
+                lineColor: Colors.roadRoute,
+                lineWidth: 5,
+                lineCap: 'round',
+                lineJoin: 'round',
+                // Straight dashed segments until the road route arrives.
+                ...(hasRoute ? {} : { lineDasharray: [2, 1.5] }),
+              }}
+            />
+          </ShapeSource>
         )}
 
         {pickup && (
-          <Marker
-            coordinate={pickup}
-            anchor={{ x: 0.5, y: 0.5 }}
-            identifier="pickup"
-            title="Pickup"
-          >
-            <View style={[styles.pin, { backgroundColor: Colors.dispatchGreen }]}>
+          <MarkerView coordinate={pos(pickup)} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+            <View style={[styles.pin, { backgroundColor: Colors.dispatchGreen }]} accessibilityLabel="Pickup">
               <Ionicons name="cube" size={16} color={Colors.onBrand} />
             </View>
-          </Marker>
+          </MarkerView>
         )}
         {dropoff && (
-          <Marker
-            coordinate={dropoff}
-            anchor={{ x: 0.5, y: 0.5 }}
-            identifier="dropoff"
-            title="Drop-off"
-          >
-            <View style={[styles.pin, { backgroundColor: Colors.harborBlue }]}>
+          <MarkerView coordinate={pos(dropoff)} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+            <View style={[styles.pin, { backgroundColor: Colors.harborBlue }]} accessibilityLabel="Drop-off">
               <Ionicons name="flag" size={16} color="#FFFFFF" />
             </View>
-          </Marker>
+          </MarkerView>
         )}
       </MapView>
 
@@ -196,16 +184,6 @@ export function DispatchMap({
       >
         <Ionicons name="locate" size={22} color={Colors.textPrimary} />
       </TouchableOpacity>
-
-      {(TILE_URL || (route && route.length >= 2)) && (
-        <Text
-          style={[styles.attribution, { bottom: bottomInset + 6 }]}
-          onPress={() => void Linking.openURL('https://www.mapbox.com/about/maps/')}
-          accessibilityRole="link"
-        >
-          {TILE_URL ? '© Mapbox © OpenStreetMap' : 'Routes © Mapbox © OpenStreetMap'}
-        </Text>
-      )}
     </View>
   );
 }
@@ -233,11 +211,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Elevation.floating,
-  },
-  attribution: {
-    position: 'absolute',
-    left: 12,
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.55)',
   },
 });

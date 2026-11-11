@@ -72,7 +72,8 @@
         {
           "microphonePermission": "GhanaDash uses the microphone only during in-app calls between a customer and their rider."
         }
-      ]
+      ],
+      "@rnmapbox/maps"
     ],
     "icon": "./assets/images/icon.png",
     "owner": "resolvedash",

@@ -69,7 +69,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#0D121A"
         }
-      ]
+      ],
+      "@rnmapbox/maps"
     ],
     "icon": "./assets/images/icon.png",
     "owner": "resolvedash",

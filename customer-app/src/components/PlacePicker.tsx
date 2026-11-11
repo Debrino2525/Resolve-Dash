@@ -10,14 +10,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { MapType } from 'react-native-maps';
+import { Camera, LocationPuck, MapState, MapView, StyleImport } from '@rnmapbox/maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getRecentPlaces, RecentPlace } from '../api/backendClient';
 import { DEFAULT_CENTRE, getCurrentFix } from '../services/location';
 import { addressForPoint, newSearchSession, resolveSuggestion, searchPlaces, Suggestion } from '../services/placeSearch';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
 import { Place, Point } from '../types/orders';
-import { LANDMARK_MAP } from './mapStyle';
+import { lngLat, SATELLITE_STYLE, STANDARD_STYLE, zoomForDelta } from './mapSetup';
 import { TactileButton } from './TactileButton';
 
 export interface PlacePickerProps {
@@ -59,7 +59,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
   const [pinAddress, setPinAddress] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [hint, setHint] = useState<string>('');
-  const [mapType, setMapType] = useState<MapType>('standard');
+  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
   const [recent, setRecent] = useState<RecentPlace[]>([]);
   const reqId = useRef(0);
 
@@ -300,18 +300,24 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
           <View style={styles.flex}>
             <MapView
               style={StyleSheet.absoluteFill}
-              initialRegion={{ latitude: pin.lat, longitude: pin.lng, latitudeDelta: EXACT_DELTA, longitudeDelta: EXACT_DELTA }}
-              onRegionChangeComplete={onRegionDone}
-              mapType={mapType}
-              showsUserLocation
-              showsBuildings
-              showsTraffic={false}
-              showsIndoors={false}
-              customMapStyle={LANDMARK_MAP}
+              styleURL={mapType === 'satellite' ? SATELLITE_STYLE : STANDARD_STYLE}
+              onMapIdle={(state: MapState) =>
+                onRegionDone({ latitude: state.properties.center[1], longitude: state.properties.center[0] })
+              }
+              logoEnabled
+              attributionEnabled
+              scaleBarEnabled={false}
+              compassEnabled={false}
               rotateEnabled={false}
               pitchEnabled={false}
-              toolbarEnabled={false}
-            />
+            >
+              {mapType === 'standard' && (
+                // Landmarks people give directions by stay visible; transit clutter goes.
+                <StyleImport id="basemap" existing config={{ showPointOfInterestLabels: true, showTransitLabels: false }} />
+              )}
+              <Camera defaultSettings={{ centerCoordinate: lngLat(pin), zoomLevel: zoomForDelta(EXACT_DELTA) }} />
+              <LocationPuck puckBearingEnabled={false} />
+            </MapView>
             {/* The exact point is the dot; the pin's tip sits on it. */}
             <View pointerEvents="none" style={styles.pinWrap}>
               <Ionicons name="location" size={44} color={Colors.dangerRed} style={styles.pinIcon} />
@@ -324,7 +330,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
 
             <TouchableOpacity
               style={styles.mapTypeBtn}
-              onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
+              onPress={() => setMapType((t) => (t === 'standard' ? 'satellite' : 'standard'))}
               accessibilityRole="button"
               accessibilityLabel={mapType === 'standard' ? 'Show satellite view' : 'Show map view'}
             >

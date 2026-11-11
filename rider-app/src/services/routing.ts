@@ -166,15 +166,3 @@ export function formatDuration(seconds: number): string {
   if (mins < 60) return `${mins} min`;
   return `${Math.floor(mins / 60)} h ${mins % 60} min`;
 }
-
-/**
- * Optional Mapbox dark raster tiles for react-native-maps <UrlTile>, enabled only with
- * EXPO_PUBLIC_MAP_TILES=mapbox. Off by default: raster tiles bake labels into images, so they
- * turn sideways when the map rotates to the rider's heading in navigation, and on iOS they can
- * cover the route line. The native dark maps (Apple/Google) keep labels upright. For full Mapbox
- * vector maps, use @rnmapbox/maps in a development build.
- */
-export function mapboxTileUrl(): string | null {
-  if (!MAPBOX_TOKEN || process.env.EXPO_PUBLIC_MAP_TILES !== 'mapbox') return null;
-  return `https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
-}
