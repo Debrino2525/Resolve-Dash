@@ -1,8 +1,8 @@
 import * as Location from 'expo-location';
 import { Point } from '../types/orders';
 
-/** Map centre before we know where the customer is: Accra. */
-export const ACCRA: Point = { lat: 5.6037, lng: -0.187 };
+/** Map centre before we know where the customer is: the launch city, Sekondi-Takoradi (Market Circle). */
+export const DEFAULT_CENTRE: Point = { lat: 4.8975, lng: -1.7553 };
 
 /** A fix this good can prefill the pickup; worse ones must be set on the map. */
 export const GOOD_ACCURACY_M = 50;
@@ -39,6 +39,22 @@ export async function getCurrentFix(ask = true): Promise<Fix | null> {
       point: { lat: pos.coords.latitude, lng: pos.coords.longitude },
       accuracy: pos.coords.accuracy != null ? Math.round(pos.coords.accuracy) : null,
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The phone's last known position, instantly and without waiting for GPS: good enough to centre
+ * the map and bias search while the precise fix is on its way. Never asks for permission; null
+ * if not granted or the phone has no position yet.
+ */
+export async function getQuickPoint(): Promise<Point | null> {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    if (!perm.granted) return null;
+    const last = await Location.getLastKnownPositionAsync();
+    return last ? { lat: last.coords.latitude, lng: last.coords.longitude } : null;
   } catch {
     return null;
   }

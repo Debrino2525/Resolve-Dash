@@ -26,7 +26,7 @@ import {
   rateSchema,
 } from './order.schemas';
 import { OrderService, QuoteResult } from './order.service';
-import { CustomerOrderView } from './order.types';
+import { CustomerOrderView, RecentPlace } from './order.types';
 
 function parse<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const r = schema.safeParse(body ?? {});
@@ -66,6 +66,12 @@ export class OrderController {
   @Get()
   list(@CurrentUser() user: AuthUser): Promise<CustomerOrderView[]> {
     return this.orders.list(user.id);
+  }
+
+  /** The customer's own recent stops, for one-tap reuse. Declared before :id. */
+  @Get('recent-places')
+  recentPlaces(@CurrentUser() user: AuthUser): Promise<RecentPlace[]> {
+    return this.orders.recentPlaces(user.id);
   }
 
   /** Declared before :id so "nearby-riders" is not parsed as an order id. */

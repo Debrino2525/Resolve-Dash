@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import MapView, { MapType } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ACCRA, getCurrentFix } from '../services/location';
+import { getRecentPlaces, RecentPlace } from '../api/backendClient';
+import { DEFAULT_CENTRE, getCurrentFix } from '../services/location';
 import { reverseGeocode } from '../services/mapbox';
 import { newSearchSession, resolveSuggestion, searchPlaces, Suggestion } from '../services/placeSearch';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
@@ -24,8 +25,17 @@ export interface PlacePickerProps {
   title: string;
   near: Point | null;
   initial: Place | null;
-  onPick: (place: Place) => void;
+  /** `extras` come from a remembered place: its landmark and GPS code, to prefill the form. */
+  onPick: (place: Place, extras?: { landmark: string | null; gpsCode: string | null }) => void;
   onClose: () => void;
+}
+
+/** Credit line for the data sources shown (required by OpenStreetMap and HERE). */
+function attributionFor(results: Suggestion[]): string | null {
+  const names: string[] = [];
+  if (results.some((r) => r.source === 'osm')) names.push('© OpenStreetMap contributors');
+  if (results.some((r) => r.source === 'here')) names.push('© HERE');
+  return names.length > 0 ? `Places ${names.join(', ')}` : null;
 }
 
 /** ~250 m across: close enough to put the pin on a building or gate. */
@@ -44,11 +54,12 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
   const session = useRef(newSearchSession());
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
-  const [pin, setPin] = useState<Point>(initial ?? near ?? ACCRA);
+  const [pin, setPin] = useState<Point>(initial ?? near ?? DEFAULT_CENTRE);
   const [pinAddress, setPinAddress] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [hint, setHint] = useState<string>('');
   const [mapType, setMapType] = useState<MapType>('standard');
+  const [recent, setRecent] = useState<RecentPlace[]>([]);
   const reqId = useRef(0);
 
   useEffect(() => {
@@ -56,9 +67,13 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     setMode('search');
     setQuery('');
     setResults([]);
-    setPin(initial ?? near ?? ACCRA);
+    setPin(initial ?? near ?? DEFAULT_CENTRE);
     setPinAddress(null);
     session.current = newSearchSession();
+    // Remembered spots from the customer's own deliveries (best effort: none if offline).
+    getRecentPlaces()
+      .then(setRecent)
+      .catch(() => setRecent([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
@@ -100,7 +115,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
           : `${item.title} is the general area. Move the map so the pin sits on the exact building or gate.`,
       );
     } catch {
-      openMap(near ?? ACCRA, `We couldn't place ${item.title}. Move the map so the pin sits on the exact spot.`);
+      openMap(near ?? DEFAULT_CENTRE, `We couldn't place ${item.title}. Move the map so the pin sits on the exact spot.`);
     } finally {
       setResolvingId(null);
     }
@@ -111,7 +126,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     const fix = await getCurrentFix(true);
     setLocating(false);
     if (!fix) {
-      openMap(near ?? ACCRA, "We couldn't get your GPS position. Move the map so the pin sits on the exact spot.");
+      openMap(near ?? DEFAULT_CENTRE, "We couldn't get your GPS position. Move the map so the pin sits on the exact spot.");
       return;
     }
     const acc = fix.accuracy != null ? ` (accurate to about ±${fix.accuracy} m)` : '';
@@ -182,7 +197,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               style={styles.option}
               onPress={() =>
                 openMap(
-                  initial ?? near ?? ACCRA,
+                  initial ?? near ?? DEFAULT_CENTRE,
                   initial
                     ? 'Move the map so the pin sits exactly on the spot.'
                     : 'Move the map to the right street, then place the pin on the exact building or gate.',
@@ -199,6 +214,37 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               </View>
             </TouchableOpacity>
 
+            {query.trim().length < 2 && recent.length > 0 && (
+              <View style={styles.recentBlock}>
+                <Text style={styles.sectionLabel}>Your recent places</Text>
+                {recent.map((r) => (
+                  <TouchableOpacity
+                    key={`${r.lat},${r.lng}`}
+                    style={styles.result}
+                    onPress={() =>
+                      // Confirmed on the map in an earlier delivery: use it as is.
+                      onPick({ lat: r.lat, lng: r.lng, address: r.address }, { landmark: r.landmark, gpsCode: r.gpsCode })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Use ${r.address}`}
+                  >
+                    <Ionicons name="time-outline" size={20} color={Colors.dispatchGreenLight} />
+                    <View style={styles.flex}>
+                      <Text style={styles.resultTitle} numberOfLines={1}>
+                        {r.address}
+                      </Text>
+                      {r.landmark ? (
+                        <Text style={styles.resultSub} numberOfLines={1}>
+                          {r.landmark}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <FlatList
               data={results}
               keyExtractor={(r) => r.id}
@@ -213,8 +259,8 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
                 ) : undefined
               }
               ListFooterComponent={
-                results[0]?.source === 'osm' ? (
-                  <Text style={styles.attribution}>Places © OpenStreetMap contributors</Text>
+                attributionFor(results) ? (
+                  <Text style={styles.attribution}>{attributionFor(results)}</Text>
                 ) : undefined
               }
               ListEmptyComponent={
@@ -338,6 +384,17 @@ const styles = StyleSheet.create({
   optionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   optionText: { ...Typography.bodyBold, color: Colors.textPrimary },
   optionSub: { ...Typography.caption, color: Colors.textMuted },
+  recentBlock: {
+    paddingBottom: 4,
+  },
+  sectionLabel: {
+    ...Typography.micro,
+    textTransform: 'uppercase',
+    color: Colors.textMuted,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: 4,
+  },
   attribution: {
     fontSize: 11,
     color: Colors.textMuted,

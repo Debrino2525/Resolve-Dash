@@ -6,8 +6,8 @@ export interface LatLng {
   longitude: number;
 }
 
-/** Map centre before the rider's position is known: Accra. */
-export const GHANA_DEFAULT_CENTER: LatLng = { latitude: 5.6037, longitude: -0.187 };
+/** Map centre before the rider's position is known: the launch city, Sekondi-Takoradi (Market Circle). */
+export const GHANA_DEFAULT_CENTER: LatLng = { latitude: 4.8975, longitude: -1.7553 };
 
 export type LocationPermission = 'unknown' | 'granted' | 'denied';
 

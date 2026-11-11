@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { nearbyRiders } from '../api/backendClient';
 import { DeliveryMap } from '../components/DeliveryMap';
-import { getCurrentPoint } from '../services/location';
+import { getCurrentPoint, getQuickPoint } from '../services/location';
 import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
 import { cedis, CustomerOrder, CustomerProfile, Point, STATUS_LABEL } from '../types/orders';
 
@@ -23,7 +23,8 @@ export function HomeScreen({ profile, activeOrders, onNewDelivery, onOpenOrder }
   const [riderCount, setRiderCount] = useState<number | null>(null);
 
   useEffect(() => {
-    void getCurrentPoint(true).then(setHere);
+    void getQuickPoint().then((p) => p && setHere((cur) => cur ?? p));
+    void getCurrentPoint(true).then((p) => p && setHere(p));
   }, []);
 
   useEffect(() => {

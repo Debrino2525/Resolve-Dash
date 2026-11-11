@@ -11,8 +11,8 @@ export interface Suggestion {
   /** Known up front for OSM and Mapbox; Google needs a details lookup when chosen. */
   point: Point | null;
   address: string | null;
-  /** Who found it (OpenStreetMap results must be credited on screen). */
-  source: 'google' | 'osm' | 'mapbox';
+  /** Who found it (OpenStreetMap and HERE results must be credited on screen). */
+  source: 'google' | 'osm' | 'here' | 'mapbox';
 }
 
 /** One token per search, shared by every keystroke and the final pick (cheaper Google billing). */
@@ -29,7 +29,7 @@ export async function searchPlaces(query: string, near: Point | null, session: s
   try {
     const res = await placesAutocomplete(query, session, near);
     if (res.enabled) {
-      const source = res.provider === 'google' ? 'google' : 'osm';
+      const fallback = res.provider === 'google' ? 'google' : 'osm';
       return res.suggestions.map((s) => {
         const point =
           typeof s.lat === 'number' && typeof s.lng === 'number' ? { lat: s.lat, lng: s.lng } : null;
@@ -41,7 +41,7 @@ export async function searchPlaces(query: string, near: Point | null, session: s
           precise: true,
           point,
           address: point ? [s.title, where].filter(Boolean).join(', ') : null,
-          source,
+          source: s.source ?? fallback,
         };
       });
     }

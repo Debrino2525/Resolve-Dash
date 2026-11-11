@@ -15,6 +15,16 @@ export interface OrderStop {
   contactPhone: string;
 }
 
+/** A stop the customer used before, offered again in the place picker (their own orders only). */
+export interface RecentPlace {
+  lat: number;
+  lng: number;
+  address: string;
+  landmark: string | null;
+  gpsCode: string | null;
+  lastUsedAt: string;
+}
+
 /** Full order row (internal). */
 export interface DeliveryOrder {
   id: string;

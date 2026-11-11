@@ -17,7 +17,7 @@ import { InlineNotice } from '../components/InlineNotice';
 import { PlacePicker } from '../components/PlacePicker';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TactileButton } from '../components/TactileButton';
-import { getCurrentFix, GOOD_ACCURACY_M } from '../services/location';
+import { getCurrentFix, getQuickPoint, GOOD_ACCURACY_M } from '../services/location';
 import { PickedPhoto, pickPhoto } from '../services/photos';
 import { reverseGeocode } from '../services/mapbox';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
@@ -82,8 +82,10 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
   // Prefill pickup with where the customer is now (they can change it).
   useEffect(() => {
     void (async () => {
+      // Centre search on the customer straight away; the precise fix replaces it below.
+      void getQuickPoint().then((p) => p && setHere((cur) => cur ?? p));
       const fix = await getCurrentFix(true);
-      setHere(fix?.point ?? null);
+      if (fix) setHere(fix.point);
       // Only a precise fix may prefill the pickup; a rough one would send the rider to the
       // wrong place. Either way the customer can check it on the map.
       if (fix && !initial && fix.accuracy != null && fix.accuracy <= GOOD_ACCURACY_M) {
@@ -266,9 +268,18 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
         near={here}
         initial={(picking === 'pickup' ? pickup.place : dropoff.place) ?? null}
         onClose={() => setPicking(null)}
-        onPick={(place) => {
-          if (picking === 'pickup') setPickup((s) => ({ ...s, place, note: 'Exact spot confirmed on the map.' }));
-          else setDropoff((s) => ({ ...s, place, note: 'Exact spot confirmed on the map.' }));
+        onPick={(place, extras) => {
+          const note = extras ? 'Your saved spot from an earlier delivery.' : 'Exact spot confirmed on the map.';
+          // A remembered place brings its landmark and GPS code, without overwriting what was typed.
+          const apply = (s: StopForm): StopForm => ({
+            ...s,
+            place,
+            note,
+            landmark: s.landmark.trim() || extras?.landmark || '',
+            gpsCode: s.gpsCode.trim() || extras?.gpsCode || '',
+          });
+          if (picking === 'pickup') setPickup(apply);
+          else setDropoff(apply);
           setPicking(null);
           setError(null);
         }}

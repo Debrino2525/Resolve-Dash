@@ -2,7 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
 import { Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { ACCRA } from '../services/location';
+import { DEFAULT_CENTRE } from '../services/location';
 import { Colors } from '../theme/theme';
 import { Point } from '../types/orders';
 
@@ -38,7 +38,7 @@ export function DeliveryMap({
   const map = useRef<MapView>(null);
   const focus = [pickup, dropoff, rider].filter((p): p is Point => Boolean(p));
   const fitKey = focus.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|');
-  const start = center ?? pickup ?? ACCRA;
+  const start = center ?? pickup ?? DEFAULT_CENTRE;
 
   useEffect(() => {
     if (!map.current) return;

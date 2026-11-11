@@ -137,6 +137,18 @@ export const rateOrder = (
     body: JSON.stringify({ stars, tags, ...(comment ? { comment } : {}) }),
   });
 
+/** Your own recent pickup/drop-off spots (newest first), for one-tap reuse. */
+export interface RecentPlace {
+  lat: number;
+  lng: number;
+  address: string;
+  landmark: string | null;
+  gpsCode: string | null;
+  lastUsedAt: string;
+}
+
+export const getRecentPlaces = (): Promise<RecentPlace[]> => api('/orders/recent-places');
+
 export const nearbyRiders = (p: Point): Promise<{ count: number; riders: Point[] }> =>
   api(`/orders/nearby-riders?lat=${p.lat.toFixed(5)}&lng=${p.lng.toFixed(5)}`);
 
@@ -199,9 +211,10 @@ export interface ServerPlaceSuggestion {
   placeId: string;
   title: string;
   subtitle: string;
-  /** Sent by OpenStreetMap search (no details lookup needed). */
+  /** Sent by OpenStreetMap/HERE search (no details lookup needed). */
   lat?: number;
   lng?: number;
+  source?: 'google' | 'osm' | 'here';
 }
 
 export const placesAutocomplete = (

@@ -17,6 +17,7 @@ import {
   DeliveryOrder,
   OrderStop,
   PackageType,
+  RecentPlace,
   RATING_TAGS,
 } from './order.types';
 import { priceTrip, readPricing } from './pricing';
@@ -170,6 +171,31 @@ export class OrderService {
   async list(userId: string): Promise<CustomerOrderView[]> {
     const orders = await this.orders.listForCustomer(userId);
     return Promise.all(orders.map((o) => this.toView(o, false)));
+  }
+
+  /**
+   * The customer's own recent pickup and drop-off spots, newest first. Spots within 40 m of
+   * each other count as one (the newest address and landmark win). Only their own orders.
+   */
+  async recentPlaces(userId: string, max = 6): Promise<RecentPlace[]> {
+    const orders = await this.orders.listForCustomer(userId, 30);
+    const out: RecentPlace[] = [];
+    for (const o of orders) {
+      // Drop-off first: it is the stop people most often send to again.
+      for (const s of [o.dropoff, o.pickup]) {
+        if (out.some((p) => haversineMeters(p, s) < 40)) continue;
+        out.push({
+          lat: s.lat,
+          lng: s.lng,
+          address: s.address,
+          landmark: s.landmark,
+          gpsCode: s.gpsCode,
+          lastUsedAt: o.requestedAt,
+        });
+        if (out.length >= max) return out;
+      }
+    }
+    return out;
   }
 
   async get(userId: string, orderId: string): Promise<CustomerOrderView> {

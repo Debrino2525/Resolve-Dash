@@ -199,6 +199,43 @@ describe('OrderService quotes', () => {
   });
 });
 
+describe('OrderService recent places', () => {
+  it("returns the customer's own stops, newest first, merging spots within 40 m", async () => {
+    const home = { ...stop(4.8975, -1.7553), address: 'Market Circle', landmark: 'Blue gate' };
+    const homeAgain = { ...stop(4.89755, -1.75532), address: 'Market Circle (old)' }; // ~6 m away
+    const office = { ...stop(4.9201, -1.7802), address: 'Anaji', gpsCode: 'WS-123-4567' };
+    const listForCustomer = jest.fn().mockResolvedValue([
+      order({ dropoff: home, pickup: office, requestedAt: '2026-11-10T10:00:00.000Z' }),
+      order({ dropoff: homeAgain, pickup: office, requestedAt: '2026-11-01T10:00:00.000Z' }),
+    ]);
+    const service = new OrderService(
+      {} as DatabaseService,
+      { listForCustomer } as unknown as OrderRepository,
+      {} as CustomerRepository,
+      {} as DispatchService,
+    );
+    await expect(service.recentPlaces(USER)).resolves.toEqual([
+      {
+        lat: 4.8975,
+        lng: -1.7553,
+        address: 'Market Circle',
+        landmark: 'Blue gate',
+        gpsCode: null,
+        lastUsedAt: '2026-11-10T10:00:00.000Z',
+      },
+      {
+        lat: 4.9201,
+        lng: -1.7802,
+        address: 'Anaji',
+        landmark: null,
+        gpsCode: 'WS-123-4567',
+        lastUsedAt: '2026-11-10T10:00:00.000Z',
+      },
+    ]);
+    expect(listForCustomer).toHaveBeenCalledWith(USER, 30);
+  });
+});
+
 describe('RiderDispatchService', () => {
   let service: RiderDispatchService;
   let client: { query: jest.Mock };

@@ -47,6 +47,8 @@ services:
         sync: false
       - key: GOOGLE_PLACES_API_KEY
         sync: false
+      - key: HERE_API_KEY # place search top-up when OpenStreetMap finds too little
+        sync: false
       - key: AGORA_APP_ID
         value: c64f6ae3b0aa4d5d8c2275e72aa7e3a0
       - key: AGORA_APP_CERTIFICATE
