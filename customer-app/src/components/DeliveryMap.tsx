@@ -1,7 +1,8 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
-import { Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+import { CLEAN_MAP } from './mapStyle';
 import { DEFAULT_CENTRE } from '../services/location';
 import { Colors } from '../theme/theme';
 import { Point } from '../types/orders';
@@ -61,7 +62,11 @@ export function DeliveryMap({
       initialRegion={{ ...ll(start), latitudeDelta: 0.04, longitudeDelta: 0.04 }}
       showsUserLocation={showsUser}
       showsMyLocationButton={false}
-      showsPointsOfInterests={Platform.OS === 'ios' ? true : undefined}
+      showsPointsOfInterests={false}
+      showsBuildings={false}
+      showsTraffic={false}
+      showsIndoors={false}
+      customMapStyle={CLEAN_MAP}
       toolbarEnabled={false}
       rotateEnabled={false}
       pitchEnabled={false}

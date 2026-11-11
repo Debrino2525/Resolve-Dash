@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
 import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region, UrlTile } from 'react-native-maps';
+import { CLEAN_MAP } from './mapStyle';
 import { GHANA_DEFAULT_CENTER, LatLng } from '../services/location';
 import { mapboxTileUrl } from '../services/routing';
 import { Colors, Elevation, Radii, TOUCH_TARGET } from '../theme/theme';
@@ -117,7 +118,7 @@ export function DispatchMap({
               ? 'mutedStandard'
               : 'standard'
         }
-        customMapStyle={!TILE_URL && Platform.OS === 'android' ? DARK_MAP_STYLE : undefined}
+        customMapStyle={!TILE_URL && Platform.OS === 'android' ? [...DARK_MAP_STYLE, ...CLEAN_MAP] : undefined}
         userInterfaceStyle="dark"
         initialRegion={{
           ...centre,
@@ -127,7 +128,10 @@ export function DispatchMap({
         showsUserLocation={Boolean(rider)}
         showsMyLocationButton={false}
         showsCompass={false}
-        showsPointsOfInterests={!TILE_URL}
+        showsPointsOfInterests={false}
+        showsBuildings={false}
+        showsTraffic={false}
+        showsIndoors={false}
         toolbarEnabled={false}
         rotateEnabled={false}
         pitchEnabled={false}

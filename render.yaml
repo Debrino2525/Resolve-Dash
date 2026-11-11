@@ -51,6 +51,8 @@ services:
         sync: false
       - key: HERE_API_KEY # place search top-up when OpenStreetMap finds too little
         sync: false
+      - key: GEOAPIFY_API_KEY # backup for place search and pin addresses when Photon is down
+        sync: false
       - key: SUPABASE_SMS_HOOK_SECRET # Supabase Auth "Send SMS" hook secret (v1,whsec_...)
         sync: false
       - key: AGORA_APP_ID

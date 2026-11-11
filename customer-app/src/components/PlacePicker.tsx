@@ -14,10 +14,10 @@ import MapView, { MapType } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getRecentPlaces, RecentPlace } from '../api/backendClient';
 import { DEFAULT_CENTRE, getCurrentFix } from '../services/location';
-import { reverseGeocode } from '../services/mapbox';
-import { newSearchSession, resolveSuggestion, searchPlaces, Suggestion } from '../services/placeSearch';
+import { addressForPoint, newSearchSession, resolveSuggestion, searchPlaces, Suggestion } from '../services/placeSearch';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
 import { Place, Point } from '../types/orders';
+import { LANDMARK_MAP } from './mapStyle';
 import { TactileButton } from './TactileButton';
 
 export interface PlacePickerProps {
@@ -34,6 +34,7 @@ export interface PlacePickerProps {
 function attributionFor(results: Suggestion[]): string | null {
   const names: string[] = [];
   if (results.some((r) => r.source === 'osm')) names.push('© OpenStreetMap contributors');
+  if (results.some((r) => r.source === 'geoapify')) names.push('© OpenStreetMap contributors, Powered by Geoapify');
   if (results.some((r) => r.source === 'here')) names.push('© HERE');
   return names.length > 0 ? `Places ${names.join(', ')}` : null;
 }
@@ -138,7 +139,7 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
     setPin(p);
     setResolving(true);
     const id = ++reqId.current;
-    void reverseGeocode(p).then((a) => {
+    void addressForPoint(p).then((a) => {
       if (id !== reqId.current) return;
       setPinAddress(a);
       setResolving(false);
@@ -304,6 +305,9 @@ export function PlacePicker({ visible, title, near, initial, onPick, onClose }: 
               mapType={mapType}
               showsUserLocation
               showsBuildings
+              showsTraffic={false}
+              showsIndoors={false}
+              customMapStyle={LANDMARK_MAP}
               rotateEnabled={false}
               pitchEnabled={false}
               toolbarEnabled={false}

@@ -18,7 +18,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { TactileButton } from '../components/TactileButton';
 import { getCurrentFix, getQuickPoint, GOOD_ACCURACY_M } from '../services/location';
 import { PickedPhoto, pickPhoto } from '../services/photos';
-import { reverseGeocode } from '../services/mapbox';
+import { addressForPoint } from '../services/placeSearch';
 import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 import {
   CustomerProfile,
@@ -88,7 +88,7 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
       // Only a precise fix may prefill the pickup; a rough one would send the rider to the
       // wrong place. Either way the customer can check it on the map.
       if (fix && !initial && fix.accuracy != null && fix.accuracy <= GOOD_ACCURACY_M) {
-        const address = await reverseGeocode(fix.point);
+        const address = await addressForPoint(fix.point);
         setPickup((s) =>
           s.place
             ? s

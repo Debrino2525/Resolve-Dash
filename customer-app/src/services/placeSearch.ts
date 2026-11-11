@@ -1,6 +1,6 @@
-import { placeDetails, placesAutocomplete } from '../api/backendClient';
+import { placeDetails, placesAutocomplete, placesReverse } from '../api/backendClient';
 import { Place, Point } from '../types/orders';
-import { searchPlaces as mapboxSearch } from './mapbox';
+import { reverseGeocode as mapboxReverse, searchPlaces as mapboxSearch } from './mapbox';
 
 export interface Suggestion {
   id: string;
@@ -12,7 +12,7 @@ export interface Suggestion {
   point: Point | null;
   address: string | null;
   /** Who found it (OpenStreetMap and HERE results must be credited on screen). */
-  source: 'google' | 'osm' | 'here' | 'mapbox';
+  source: 'google' | 'osm' | 'here' | 'geoapify' | 'mapbox';
 }
 
 /** One token per search, shared by every keystroke and the final pick (cheaper Google billing). */
@@ -58,6 +58,21 @@ export async function searchPlaces(query: string, near: Point | null, session: s
     address: s.address,
     source: 'mapbox' as const,
   }));
+}
+
+/**
+ * Live street-level address for an exact map pin ("Near Nakoff Hotel, Turkson Avenue, Pipeano"),
+ * from our server (OpenStreetMap, then HERE / Geoapify). Mapbox, which mostly knows only the town
+ * in Ghana, is the last resort; the coordinates are shown if nothing at all is known.
+ */
+export async function addressForPoint(p: Point): Promise<string> {
+  try {
+    const res = await placesReverse(p);
+    if (res.result?.address) return res.result.address;
+  } catch {
+    // server unreachable: fall through
+  }
+  return mapboxReverse(p);
 }
 
 /** Coordinates and address for a chosen suggestion. */

@@ -48,7 +48,7 @@ const MAX_RESULTS = 6;
 const LOCAL_RADIUS_M = 40_000;
 
 export type PlaceProvider = 'google' | 'osm';
-export type PlaceSource = 'google' | 'osm' | 'here';
+export type PlaceSource = 'google' | 'osm' | 'here' | 'geoapify';
 
 export interface PlaceSuggestion {
   placeId: string;
@@ -120,7 +120,8 @@ function hereWhere(label: string | undefined, title: string): string {
 }
 
 function categoryLabel(value: string | undefined): string | null {
-  if (!value || ['yes', 'fixme', 'unclassified', 'unknown'].includes(value.toLowerCase())) return null;
+  if (!value || ['yes', 'fixme', 'unclassified', 'unknown'].includes(value.toLowerCase()))
+    return null;
   if (CATEGORY_LABEL[value]) return CATEGORY_LABEL[value];
   const words = value.replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -146,6 +147,118 @@ export function photonSubtitle(p: NonNullable<PhotonFeature['properties']>, titl
   const where = parts.slice(0, 3).join(', ');
   const label = categoryLabel(p.osm_value);
   return [label, where].filter(Boolean).join(' · ');
+}
+
+/** Street-level description of a map point ("Near X, Street, Area"). */
+export interface ReverseAddress {
+  /** One line for the app: "Near Nakoff Hotel, Turkson Avenue, Pipeano". */
+  address: string;
+  street: string | null;
+  /** Closest named landmark within ~120 m (school, hotel, shop, fuel station…). */
+  near: string | null;
+  area: string | null;
+  source: 'osm' | 'here' | 'geoapify';
+}
+
+interface PhotonReverseFeature {
+  geometry?: { coordinates?: [number, number] };
+  properties?: {
+    osm_key?: string;
+    osm_value?: string;
+    name?: string;
+    street?: string;
+    district?: string;
+    locality?: string;
+    city?: string;
+    county?: string;
+  };
+}
+
+/** Roads people name in directions; footpaths and service lanes are skipped. */
+const NAMED_ROAD = new Set([
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+  'unclassified',
+  'residential',
+  'living_street',
+  'road',
+  'trunk_link',
+  'primary_link',
+  'secondary_link',
+  'tertiary_link',
+]);
+/** Kinds of places that make good "near …" landmarks. */
+const LANDMARK_KEYS = new Set([
+  'amenity',
+  'shop',
+  'tourism',
+  'leisure',
+  'office',
+  'healthcare',
+  'craft',
+  'building',
+  'historic',
+]);
+const STREET_RADIUS_M = 150;
+const LANDMARK_RADIUS_M = 120;
+
+function metresBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = (x: number): number => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
+/** Builds the one-line address from the nearest street, landmark and area. Exported for tests. */
+export function describePoint(
+  at: { lat: number; lng: number },
+  features: PhotonReverseFeature[],
+): Omit<ReverseAddress, 'source'> | null {
+  let street: { name: string; d: number } | null = null;
+  let near: { name: string; d: number } | null = null;
+  let area: string | null = null;
+  for (const f of features) {
+    const p = f.properties;
+    const c = f.geometry?.coordinates;
+    if (!p || !c) continue;
+    const d = metresBetween(at, { lat: c[1], lng: c[0] });
+    area ??= p.district ?? p.locality ?? null;
+    const name = p.name?.trim();
+    if (p.osm_key === 'highway') {
+      if (
+        name &&
+        NAMED_ROAD.has(p.osm_value ?? '') &&
+        d <= STREET_RADIUS_M &&
+        (!street || d < street.d)
+      ) {
+        street = { name, d };
+      }
+    } else if (
+      name &&
+      LANDMARK_KEYS.has(p.osm_key ?? '') &&
+      d <= LANDMARK_RADIUS_M &&
+      (!near || d < near.d)
+    ) {
+      near = { name, d };
+      // A landmark's own street is a good street when no road was found close by.
+      if (!street && p.street) street = { name: p.street, d: d + 1 };
+    }
+  }
+  if (!street && !near && !area) return null;
+  const parts = [near ? `Near ${near.name}` : null, street?.name ?? null, area].filter(
+    (x, i, all): x is string => Boolean(x) && all.indexOf(x) === i,
+  );
+  return {
+    address: parts.join(', '),
+    street: street?.name ?? null,
+    near: near?.name ?? null,
+    area,
+  };
 }
 
 export interface PlaceDetails {
@@ -180,6 +293,7 @@ const PLACE_ID_RE = /^[A-Za-z0-9_-]{10,300}$/;
 export class PlacesService {
   private readonly logger = new Logger(PlacesService.name);
   private readonly cache = new Map<string, { at: number; value: PlaceSuggestion[] }>();
+  private readonly reverseCache = new Map<string, { at: number; value: ReverseAddress }>();
   private hereDay = '';
   private hereCount = 0;
   /** Replaceable in tests. */
@@ -268,8 +382,17 @@ export class PlacesService {
     try {
       osm = await this.photon(q, near);
     } catch (err) {
-      osmFailed = true;
-      if (!this.hereKey) throw err;
+      // The free Photon server is best effort: Geoapify (same OpenStreetMap data, paid host)
+      // stands in when it is down or slow.
+      try {
+        osm = await this.geoapifySearch(q, near);
+      } catch (geoErr) {
+        this.logger.warn(
+          `Geoapify search fallback failed: ${geoErr instanceof Error ? geoErr.message : String(geoErr)}`,
+        );
+        osmFailed = true;
+        if (!this.hereKey) throw err;
+      }
     }
 
     const centre = near ?? DEFAULT_CENTRE;
@@ -319,6 +442,234 @@ export class PlacesService {
       this.cache.set(key, { at: this.now(), value: out });
     }
     return out;
+  }
+
+  /**
+   * Street-level address for a map pin (the customer's exact pickup or drop-off). OpenStreetMap
+   * first (nearest named street, landmark and area), HERE when OSM has nothing nearby.
+   */
+  async reverse(at: { lat: number; lng: number }): Promise<ReverseAddress | null> {
+    const key = `rev|${at.lat.toFixed(4)},${at.lng.toFixed(4)}`;
+    const hit = this.reverseCache.get(key);
+    if (hit && this.now() - hit.at < CACHE_TTL_MS) return hit.value;
+
+    let result: ReverseAddress | null = null;
+    if (this.photonUrl) {
+      try {
+        let osmSource: 'osm' | 'geoapify' = 'osm';
+        const features = await this.photonReverse(at).catch(async (err: unknown) => {
+          const geo = await this.geoapifyReverse(at).catch(() => null);
+          if (geo) {
+            osmSource = 'geoapify';
+            return geo;
+          }
+          throw err;
+        });
+        const d = describePoint(at, features);
+        if (d && (d.street || d.near)) result = { ...d, source: osmSource };
+        else if (d) {
+          // OSM knows the neighbourhood but no street here: take HERE's street and landmark,
+          // keep OSM's neighbourhood (HERE only gives the city).
+          const here = await this.hereReverse(at).catch(() => null);
+          if (here && d.area) {
+            const parts = [here.near ? `Near ${here.near}` : null, here.street, d.area].filter(
+              (x): x is string => Boolean(x),
+            );
+            result = { ...here, area: d.area, address: parts.join(', ') };
+          } else {
+            result = here ?? { ...d, source: osmSource };
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`OSM reverse failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (!result) result = await this.hereReverse(at).catch(() => null);
+
+    if (result) {
+      if (this.reverseCache.size >= CACHE_MAX) {
+        const oldest = this.reverseCache.keys().next().value;
+        if (oldest !== undefined) this.reverseCache.delete(oldest);
+      }
+      this.reverseCache.set(key, { at: this.now(), value: result });
+    }
+    return result;
+  }
+
+  private async photonReverse(at: { lat: number; lng: number }): Promise<PhotonReverseFeature[]> {
+    const params = new URLSearchParams({
+      lat: at.lat.toFixed(6),
+      lon: at.lng.toFixed(6),
+      lang: 'en',
+      limit: '15',
+      radius: '0.3',
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PHOTON_TIMEOUT_MS);
+    try {
+      const res = await this.fetchImpl(`${this.photonUrl}/reverse?${params.toString()}`, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return ((await res.json()) as { features?: PhotonReverseFeature[] }).features ?? [];
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private get geoapifyKey(): string | null {
+    return process.env.GEOAPIFY_API_KEY?.trim() || null;
+  }
+
+  /** Geoapify autocomplete (OpenStreetMap data), Ghana only. Used when Photon is unavailable. */
+  private async geoapifySearch(
+    q: string,
+    near: { lat: number; lng: number } | null,
+  ): Promise<PlaceSuggestion[]> {
+    if (!this.geoapifyKey) throw new Error('Geoapify not configured');
+    const centre = near ?? DEFAULT_CENTRE;
+    const params = new URLSearchParams({
+      text: q,
+      filter: 'countrycode:gh',
+      bias: `proximity:${centre.lng.toFixed(4)},${centre.lat.toFixed(4)}`,
+      lang: 'en',
+      limit: '10',
+      format: 'json',
+    });
+    params.set('apiKey', this.geoapifyKey);
+    const data = await this.getJson<{
+      results?: {
+        place_id?: string;
+        name?: string;
+        address_line1?: string;
+        address_line2?: string;
+        category?: string;
+        lat?: number;
+        lon?: number;
+      }[];
+    }>(`https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`);
+    const out: PlaceSuggestion[] = [];
+    const seen = new Set<string>();
+    for (const r of data.results ?? []) {
+      const title = (r.name ?? r.address_line1 ?? '').trim();
+      if (!title || typeof r.lat !== 'number' || typeof r.lon !== 'number') continue;
+      if (seen.has(title.toLowerCase())) continue; // same place listed twice in the map data
+      seen.add(title.toLowerCase());
+      const label = categoryLabel(r.category?.split('.').pop());
+      out.push({
+        placeId: `geoapify:${r.place_id ?? `${r.lat},${r.lon}`}`,
+        title,
+        subtitle: [label, (r.address_line2 ?? '').replace(/,\s*Ghana$/i, '')]
+          .filter(Boolean)
+          .join(' · '),
+        lat: r.lat,
+        lng: r.lon,
+        source: 'geoapify',
+      });
+      if (out.length >= 12) break;
+    }
+    return out;
+  }
+
+  /** Geoapify reverse geocoding, shaped like Photon's so describePoint() applies the same rules. */
+  private async geoapifyReverse(at: { lat: number; lng: number }): Promise<PhotonReverseFeature[]> {
+    if (!this.geoapifyKey) throw new Error('Geoapify not configured');
+    const params = new URLSearchParams({
+      lat: at.lat.toFixed(6),
+      lon: at.lng.toFixed(6),
+      lang: 'en',
+      limit: '5',
+      format: 'json',
+    });
+    params.set('apiKey', this.geoapifyKey);
+    const data = await this.getJson<{
+      results?: {
+        name?: string;
+        street?: string;
+        suburb?: string;
+        district?: string;
+        result_type?: string;
+        lat?: number;
+        lon?: number;
+      }[];
+    }>(`https://api.geoapify.com/v1/geocode/reverse?${params.toString()}`);
+    return (data.results ?? [])
+      .filter((r) => typeof r.lat === 'number' && typeof r.lon === 'number')
+      .map((r) => {
+        const isStreet = r.result_type === 'street';
+        return {
+          geometry: { coordinates: [r.lon as number, r.lat as number] },
+          properties: {
+            osm_key: isStreet ? 'highway' : 'amenity',
+            osm_value: isStreet ? 'residential' : 'yes',
+            name: isStreet ? (r.street ?? r.name) : r.name,
+            street: r.street,
+            district: r.suburb ?? r.district,
+          },
+        };
+      });
+  }
+
+  /** GET with a timeout; the key travels in the URL, which is never logged. */
+  private async getJson<T>(url: string): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PHOTON_TIMEOUT_MS);
+    try {
+      const res = await this.fetchImpl(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** HERE reverse geocoding (street level), within the shared daily HERE cap. */
+  private async hereReverse(at: { lat: number; lng: number }): Promise<ReverseAddress | null> {
+    if (!this.takeHereQuota()) return null;
+    const params = new URLSearchParams({
+      at: `${at.lat.toFixed(6)},${at.lng.toFixed(6)}`,
+      lang: 'en',
+      limit: '1',
+    });
+    params.set('apiKey', this.hereKey ?? '');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PHOTON_TIMEOUT_MS);
+    try {
+      const res = await this.fetchImpl(
+        `https://revgeocode.search.hereapi.com/v1/revgeocode?${params.toString()}`,
+        {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const item = (
+        (await res.json()) as {
+          items?: {
+            title?: string;
+            resultType?: string;
+            address?: { street?: string; district?: string; city?: string };
+          }[];
+        }
+      ).items?.[0];
+      if (!item?.address) return null;
+      const street = item.address.street ?? null;
+      const area = item.address.district ?? item.address.city ?? null;
+      const near =
+        item.resultType === 'place' && item.title ? item.title.split(',')[0].trim() : null;
+      const parts = [near ? `Near ${near}` : null, street, area].filter((x): x is string =>
+        Boolean(x),
+      );
+      return parts.length
+        ? { address: parts.join(', '), street, near, area, source: 'here' }
+        : null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Counts a HERE call against today's cap (UTC day); false when HERE is off or capped. */

@@ -228,8 +228,20 @@ export interface ServerPlaceSuggestion {
   /** Sent by OpenStreetMap/HERE search (no details lookup needed). */
   lat?: number;
   lng?: number;
-  source?: 'google' | 'osm' | 'here';
+  source?: 'google' | 'osm' | 'here' | 'geoapify';
 }
+
+/** Street-level address of a map pin, looked up live by our server. */
+export interface PinAddress {
+  address: string;
+  street: string | null;
+  near: string | null;
+  area: string | null;
+  source: 'osm' | 'here' | 'geoapify';
+}
+
+export const placesReverse = (p: Point): Promise<{ found: boolean; result: PinAddress | null }> =>
+  api(`/places/reverse?lat=${p.lat.toFixed(6)}&lng=${p.lng.toFixed(6)}`);
 
 export const placesAutocomplete = (
   q: string,

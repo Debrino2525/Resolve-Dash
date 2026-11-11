@@ -2,7 +2,7 @@ import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/
 import { Throttle } from '@nestjs/throttler';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { throttleTtlMs } from '../common/throttle.config';
-import { AutocompleteResult, PlaceDetails, PlacesService } from './places.service';
+import { AutocompleteResult, PlaceDetails, PlacesService, ReverseAddress } from './places.service';
 
 function optionalPoint(lat?: string, lng?: string): { lat: number; lng: number } | null {
   if (lat === undefined || lng === undefined) return null;
@@ -34,6 +34,19 @@ export class PlacesController {
     @Query('lng') lng?: string,
   ): Promise<AutocompleteResult> {
     return this.places.autocomplete(q, session, optionalPoint(lat, lng));
+  }
+
+  /** GET /places/reverse?lat=4.9105&lng=-1.7725: street-level address for a map pin. */
+  @Get('reverse')
+  @Throttle({ default: { limit: 60, ttl: throttleTtlMs() } }) // one per map drag
+  async reverse(
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ): Promise<{ found: boolean; result: ReverseAddress | null }> {
+    const at = optionalPoint(lat, lng);
+    if (!at) throw new BadRequestException('lat and lng are required');
+    const result = await this.places.reverse(at);
+    return { found: result !== null, result };
   }
 
   /** GET /places/details?id=<placeId>&session=<uuid> */

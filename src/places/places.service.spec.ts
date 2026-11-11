@@ -1,5 +1,5 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
-import { PlacesService } from './places.service';
+import { describePoint, PlacesService } from './places.service';
 
 const SESSION = '0b6a9c1e-7d2f-4c7e-9a3f-1234567890ab';
 
@@ -205,7 +205,9 @@ describe('PlacesService with OpenStreetMap (no Google key)', () => {
 
   it('gives a friendly error when the search server fails', async () => {
     fetchFn.mockResolvedValue({ ok: false, status: 429 });
-    await expect(svc.autocomplete('Makola', '', null)).rejects.toThrow(/Choose the spot on the map/);
+    await expect(svc.autocomplete('Makola', '', null)).rejects.toThrow(
+      /Choose the spot on the map/,
+    );
   });
 
   it('prefers Google when its key is set', async () => {
@@ -296,9 +298,9 @@ describe('PlacesService with OpenStreetMap (no Google key)', () => {
     it('stops calling HERE once the daily cap is used', async () => {
       process.env.HERE_API_KEY = 'here-key';
       process.env.HERE_DAILY_LIMIT = '1';
-      fetchFn.mockReset().mockImplementation(async (url: string) =>
-        url.includes('hereapi') ? hereOk : osmEmpty,
-      );
+      fetchFn
+        .mockReset()
+        .mockImplementation(async (url: string) => (url.includes('hereapi') ? hereOk : osmEmpty));
       await svc.autocomplete('first search', '', null);
       await svc.autocomplete('second search', '', null);
       const hereCalls = fetchFn.mock.calls.filter(([u]) => String(u).includes('hereapi'));
@@ -319,5 +321,139 @@ describe('PlacesService with OpenStreetMap (no Google key)', () => {
         /Choose the spot on the map/,
       );
     });
+  });
+});
+
+describe('describePoint (pin address)', () => {
+  const at = { lat: 4.9105, lng: -1.7725 };
+  // ~0.0009 degrees ≈ 100 m
+  const f = (
+    osm_key: string,
+    osm_value: string,
+    name: string,
+    dLat: number,
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({
+    geometry: { coordinates: [at.lng, at.lat + dLat] },
+    properties: { osm_key, osm_value, name, district: 'Pipeano', ...extra },
+  });
+
+  it('uses the nearest named street and landmark with the area', () => {
+    const d = describePoint(at, [
+      f('highway', 'residential', 'China Food Avenue', 0.0009),
+      f('highway', 'residential', 'Turkson Avenue', 0.0006),
+      f('amenity', 'school', 'Alpha and Omega School', 0.0007),
+      f('highway', 'footway', 'Shortcut Path', 0.0001), // footpaths are not addresses
+    ] as never);
+    expect(d).toEqual({
+      address: 'Near Alpha and Omega School, Turkson Avenue, Pipeano',
+      street: 'Turkson Avenue',
+      near: 'Alpha and Omega School',
+      area: 'Pipeano',
+    });
+  });
+
+  it('ignores streets and landmarks too far away to describe the pin', () => {
+    const d = describePoint(at, [
+      f('highway', 'residential', 'Far Road', 0.003), // ~330 m
+      f('tourism', 'hotel', 'Far Hotel', 0.002), // ~220 m
+    ] as never);
+    expect(d).toEqual({ address: 'Pipeano', street: null, near: null, area: 'Pipeano' });
+  });
+
+  it('returns null when nothing is known', () => {
+    expect(describePoint(at, [])).toBeNull();
+  });
+});
+
+describe('PlacesService.reverse', () => {
+  const original = { ...process.env };
+  let svc: PlacesService;
+  let fetchFn: jest.Mock;
+  const ok = (body: unknown): unknown => ({ ok: true, json: async (): Promise<unknown> => body });
+
+  beforeEach(() => {
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.PHOTON_URL;
+    delete process.env.HERE_API_KEY;
+    delete process.env.GEOAPIFY_API_KEY;
+    svc = new PlacesService();
+    fetchFn = jest.fn();
+    svc.fetchImpl = fetchFn as unknown as typeof fetch;
+  });
+  afterAll(() => {
+    process.env = original;
+  });
+
+  it('describes the pin from OpenStreetMap and caches it', async () => {
+    fetchFn.mockResolvedValue(
+      ok({
+        features: [
+          {
+            geometry: { coordinates: [-1.7725, 4.9111] },
+            properties: {
+              osm_key: 'highway',
+              osm_value: 'residential',
+              name: 'Turkson Avenue',
+              district: 'Pipeano',
+            },
+          },
+        ],
+      }),
+    );
+    const r = await svc.reverse({ lat: 4.9105, lng: -1.7725 });
+    expect(r).toMatchObject({ address: 'Turkson Avenue, Pipeano', source: 'osm' });
+    expect(fetchFn.mock.calls[0][0]).toMatch(/^https:\/\/photon\.komoot\.io\/reverse\?/);
+    await svc.reverse({ lat: 4.91051, lng: -1.77251 }); // same ~10 m cell
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to Geoapify when the free server is down, and credits it', async () => {
+    process.env.GEOAPIFY_API_KEY = 'geo-key';
+    fetchFn.mockImplementation(async (url: string) => {
+      if (url.includes('photon')) throw new Error('down');
+      return ok({
+        results: [
+          {
+            result_type: 'street',
+            street: 'Turkson Avenue',
+            suburb: 'Pipeano',
+            lat: 4.9109,
+            lon: -1.7725,
+          },
+        ],
+      });
+    });
+    const r = await svc.reverse({ lat: 4.9105, lng: -1.7725 });
+    expect(r).toMatchObject({ address: 'Turkson Avenue, Pipeano', source: 'geoapify' });
+  });
+
+  it('uses Geoapify for search when the free server is down', async () => {
+    process.env.GEOAPIFY_API_KEY = 'geo-key';
+    fetchFn.mockImplementation(async (url: string) => {
+      if (url.includes('photon')) throw new Error('down');
+      return ok({
+        results: [
+          {
+            place_id: 'a',
+            name: 'Takoradi Mall',
+            address_line2: 'Independence Avenue, Ghana',
+            category: 'commercial.shopping_mall',
+            lat: 4.9,
+            lon: -1.76,
+          },
+          { place_id: 'b', name: 'Takoradi Mall', lat: 4.9001, lon: -1.7601 }, // duplicate
+        ],
+      });
+    });
+    const res = await svc.autocomplete('Takoradi Mall', '', null);
+    expect(res.suggestions).toEqual([
+      expect.objectContaining({
+        title: 'Takoradi Mall',
+        subtitle: 'Shopping mall · Independence Avenue',
+        source: 'geoapify',
+      }),
+    ]);
+    expect(fetchFn.mock.calls[1][0]).toContain('filter=countrycode%3Agh');
   });
 });
