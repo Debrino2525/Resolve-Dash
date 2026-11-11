@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy | GhanaDash</title>
-  <meta name="description" content="How GhanaDash, operated by Globitech Cyber Solutions, collects, uses and protects personal data.">
+  <meta name="description" content="How GhanaDash, operated by Globitech Cyber Solutions, collects, uses and protects personal data in the GhanaDash customer and rider apps.">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -22,23 +22,28 @@
 
   <main class="wrap doc">
     <h1>Privacy Policy</h1>
-    <p class="muted">Effective 10 November 2026 (updated for documents and on-duty location)</p>
+    <p class="muted">Effective 11 November 2026 (updated for the customer app, deliveries, live location, photos and chat)</p>
 
     <p>
       This policy explains how <strong>Globitech Cyber Solutions</strong> ("we", "us"), operator of
-      GhanaDash, collects and uses personal data when you use the GhanaDash Rider app, this website
-      and related services. We process personal data in line with Ghana's
+      GhanaDash, collects and uses personal data when you use the <strong>GhanaDash</strong> app
+      (for customers sending packages), the <strong>GhanaDash Rider</strong> app, this website and
+      related services. We process personal data in line with Ghana's
       <strong>Data Protection Act, 2012 (Act 843)</strong>.
     </p>
 
     <nav class="toc" aria-label="Contents">
       <ol>
         <li><a href="#collect">Data we collect</a></li>
+        <li><a href="#location">Location</a></li>
+        <li><a href="#photos">Photos and chat</a></li>
         <li><a href="#use">How we use it</a></li>
-        <li><a href="#sms">SMS verification codes</a></li>
-        <li><a href="#share">Who we share it with</a></li>
+        <li><a href="#sms">SMS sign-in and verification codes</a></li>
+        <li><a href="#between">What customers and riders see about each other</a></li>
+        <li><a href="#share">Service providers</a></li>
         <li><a href="#transfers">Where data is stored</a></li>
         <li><a href="#retention">How long we keep it</a></li>
+        <li><a href="#device">Data kept only on your phone</a></li>
         <li><a href="#security">Security</a></li>
         <li><a href="#rights">Your rights</a></li>
         <li><a href="#age">Age requirement</a></li>
@@ -52,13 +57,17 @@
       <table>
         <thead><tr><th scope="col">Category</th><th scope="col">What</th><th scope="col">Source</th></tr></thead>
         <tbody>
-          <tr><td>Account</td><td>Email address; password (stored only as a secure hash by our authentication provider); if you use Google sign-in, your Google account email and name</td><td>You, or Google with your permission</td></tr>
-          <tr><td>Rider profile</td><td>Full legal name, Ghana mobile number</td><td>You</td></tr>
-          <tr><td>Compliance documents</td><td>Ghana Card, motorcycle driving licence, roadworthy certificate and insurance: document numbers, expiry dates and the photos or PDFs you upload; our review decision and any note explaining it</td><td>You and us</td></tr>
-          <tr><td>Verification</td><td>Whether your phone number was confirmed by SMS; our team's approval or rejection decision and when it was made</td><td>Us</td></tr>
-          <tr><td>Location (only while on duty)</td><td>Your device's GPS position while you are online in the Rider app, used on your phone to show the map and guide you to pickups and drop-offs</td><td>Your device</td></tr>
-          <tr><td>Subscription &amp; payments</td><td>Trial and paid-period dates, payment reference, amount, payment channel (e.g. mobile money or card) and status</td><td>You and Paystack</td></tr>
-          <tr><td>Technical &amp; security</td><td>IP address, request logs, app sign-in session tokens (stored on your device)</td><td>Your device</td></tr>
+          <tr><td>Account (customers and riders)</td><td>Ghana mobile number (confirmed by SMS code); name; email address if you give one or sign in with email, Google or Apple (Apple may give us a private relay address instead of your real email); a password only if you choose email sign-in, stored as a secure hash by our authentication provider</td><td>You, or Google or Apple with your permission</td></tr>
+          <tr><td>Deliveries (customers)</td><td>Pickup and drop-off addresses and the exact map pin you confirm, landmarks, Ghana Post GPS codes, the name and phone number of the sender and of the recipient, package type, fragile flag, notes, fare, delivery status and times, your rating and comment</td><td>You</td></tr>
+          <tr><td>Other people's details you enter</td><td>When you send a package to or from someone else, you give us their name and phone number so the rider can reach them. Please only enter details of people who expect the delivery.</td><td>You</td></tr>
+          <tr><td>Rider profile</td><td>Full legal name, Ghana mobile number, motorbike registration from your roadworthy certificate, rating and number of completed trips</td><td>You and us</td></tr>
+          <tr><td>Compliance documents (riders)</td><td>Ghana Card, motorcycle driving licence, roadworthy certificate and insurance: document numbers, expiry dates and the photos or PDFs you upload; our review decision and any note explaining it</td><td>You and us</td></tr>
+          <tr><td>Location</td><td>See <a href="#location">section 2</a></td><td>Your device</td></tr>
+          <tr><td>Photos and chat</td><td>Package photos, chat messages and chat photos; see <a href="#photos">section 3</a></td><td>You</td></tr>
+          <tr><td>Place search</td><td>The words you type to find a pickup or drop-off place, with your approximate position so nearby places come first</td><td>You and your device</td></tr>
+          <tr><td>Subscription &amp; payments (riders)</td><td>Trial and paid-period dates, payment reference, amount, payment channel (e.g. mobile money or card) and status</td><td>You and Paystack</td></tr>
+          <tr><td>Cash deliveries</td><td>Customers pay the rider in cash; we record the fare and that the delivery was completed, not any payment card or mobile money details</td><td>Us</td></tr>
+          <tr><td>Technical &amp; security</td><td>IP address, request logs, sign-in session tokens (stored on your device)</td><td>Your device</td></tr>
         </tbody>
       </table>
     </div>
@@ -66,91 +75,166 @@
       We do <strong>not</strong> receive or store your card number, card security code or mobile
       money PIN; Paystack handles these directly.
     </p>
-    <p>
-      <strong>Location.</strong> The app asks for location permission ("while using the app") the
-      first time you go online. Your position is used only while you are on duty, to show you on
-      the map and to open turn-by-turn directions. The app does not track you in the background or
-      when you are offline, and it does not currently send your position to our servers. When live
-      order dispatch launches, your on-duty position will be shared with our dispatch system to
-      offer you nearby orders; we will update this policy before that happens.
-    </p>
-    <p>
-      <strong>Documents.</strong> Photos and PDFs of your documents are kept in private storage.
-      Only you and authorised GhanaDash verification staff can open them, and we use them only to
-      confirm your identity and that you are allowed and insured to ride.
-    </p>
 
-    <h2 id="use">2. How we use it</h2>
+    <h2 id="location">2. Location</h2>
+    <p>Both apps ask for location permission "while using the app" only. Neither app tracks you in the background or after you close it.</p>
+    <ul>
+      <li>
+        <strong>Customers.</strong> When you book, the app reads your position once to suggest your
+        pickup point, show riders near you and list nearby places first in search. It is not tracked
+        afterwards. The pickup and drop-off points you confirm are stored with the delivery.
+      </li>
+      <li>
+        <strong>Riders, while online.</strong> While you are online in the Rider app, your position
+        is sent to our servers regularly so we can offer you nearby delivery requests. When you go
+        offline, sending stops.
+      </li>
+      <li>
+        <strong>Riders, during a delivery.</strong> From the moment you accept a delivery until it is
+        completed or cancelled, the customer of that delivery can see your live position on their
+        tracking map.
+      </li>
+      <li>
+        <strong>Riders near a customer.</strong> When customers open the app, they see how many riders
+        are online nearby, shown at an approximate position (rounded to about 100 metres), without
+        names.
+      </li>
+    </ul>
+
+    <h2 id="photos">3. Photos and chat</h2>
+    <ul>
+      <li>
+        <strong>Package photo (optional).</strong> When you book, you can add a photo of the item.
+        It is stored privately and shown only to you, the rider who takes the delivery, and
+        authorised GhanaDash staff handling a question or claim about it.
+      </li>
+      <li>
+        <strong>Chat.</strong> While a delivery is in progress, the customer and the assigned rider
+        can send each other messages and photos in the app. Only those two people and authorised
+        GhanaDash staff (for safety, support or disputes) can read them. Chat closes when the
+        delivery ends; you can still read past messages.
+      </li>
+      <li>
+        <strong>Rider documents.</strong> Photos and PDFs of rider documents are kept in private
+        storage. Only the rider and authorised GhanaDash verification staff can open them, and we use
+        them only to confirm identity and that the rider is allowed and insured to ride.
+      </li>
+      <li>
+        Photos are resized and compressed on your phone before upload. The apps only use the camera
+        or photo library when you choose to add a photo.
+      </li>
+    </ul>
+
+    <h2 id="use">4. How we use it</h2>
     <ul>
       <li>To create and secure your account and sign you in.</li>
-      <li>To confirm that the mobile number on your rider profile belongs to you.</li>
-      <li>To verify your identity, licence, roadworthiness and insurance from the documents you upload.</li>
-      <li>To show your position on the map and guide you while you are on duty.</li>
-      <li>To review and approve rider applications, and to keep a record of those decisions.</li>
-      <li>To run your free trial and weekly subscription and to verify your payments.</li>
-      <li>To contact you about your account, deliveries and service changes.</li>
+      <li>To take, price and dispatch your deliveries, match them with a nearby rider and show their progress.</li>
+      <li>To let the customer and rider of a delivery contact each other by phone, WhatsApp or in-app chat.</li>
+      <li>To confirm handover with a delivery PIN and record completed deliveries, ratings and cash fares.</li>
+      <li>To find places when you search, and to suggest your recent pickup and drop-off places.</li>
+      <li>To verify riders' identity, licence, roadworthiness and insurance, and to keep a record of approval decisions.</li>
+      <li>To run riders' free trial and subscription and to verify their payments.</li>
+      <li>To provide support, handle complaints, claims and disputes, and keep riders and customers safe.</li>
       <li>To prevent fraud and abuse (for example, limiting repeated sign-in or code requests) and to meet legal obligations.</li>
     </ul>
     <p>
       We rely on performing our contract with you, our legitimate interest in running a safe
-      service, your consent where we ask for it, and legal obligations. We do <strong>not</strong>
-      sell your personal data and we do not use it for third-party advertising.
+      service, your consent where we ask for it (such as location and camera access), and legal
+      obligations. We do <strong>not</strong> sell your personal data and we do not use it for
+      third-party advertising.
     </p>
 
-    <h2 id="sms">3. SMS verification codes</h2>
+    <h2 id="sms">5. SMS sign-in and verification codes</h2>
     <p>
-      When you add your mobile number in the Rider app, we send a one-time 6-digit code by SMS
-      from the sender ID <strong>GhanaDash</strong> through our SMS provider, mNotify. Codes expire
-      after 10 minutes, work only once and are stored by us only in hashed form until used or
-      expired. We send these codes only when you request one, never for marketing. We will never
-      ask you to tell us a code by phone or message.
+      When you sign in or sign up with your phone number, or confirm a number in the app, we send a
+      one-time 6-digit code by SMS from the sender ID <strong>GhanaDash</strong> through our SMS
+      provider, mNotify. Codes expire after 10 minutes and work only once. We send codes only when
+      you request one, never for marketing, and we limit how many codes a number can receive. We
+      will never ask you to tell us a code by phone or message.
     </p>
 
-    <h2 id="share">4. Who we share it with</h2>
+    <h2 id="between">6. What customers and riders see about each other</h2>
+    <ul>
+      <li>
+        <strong>Riders offered your delivery see</strong> the pickup and drop-off addresses, pins
+        and landmarks, the package type, whether you added a photo, the distance and the fare, so
+        they can decide whether to accept. They do not see names or phone numbers at this stage.
+      </li>
+      <li>
+        <strong>The rider who accepts your delivery also sees</strong> your name, the contact names
+        and phone numbers you entered, your notes and the package photo, until the delivery ends.
+        Riders never see the delivery PIN.
+      </li>
+      <li>
+        <strong>The customer of a delivery sees</strong> the assigned rider's name, phone number,
+        motorbike registration, rating, number of completed trips and live position until the
+        delivery ends.
+      </li>
+    </ul>
+
+    <h2 id="share">7. Service providers</h2>
     <p>We share personal data only with service providers who process it for us, as needed:</p>
     <ul>
-      <li><strong>Supabase</strong>: database, account authentication and private storage of your documents.</li>
-      <li><strong>Google</strong>: sign-in, if you choose "Continue with Google"; maps on Android and turn-by-turn directions in Google Maps.</li>
-      <li><strong>Apple</strong>: maps on iPhone (Apple Maps).</li>
-      <li><strong>Paystack</strong>: subscription payments.</li>
-      <li><strong>mNotify (BMS Africa)</strong>: delivery of SMS verification codes (your phone number and the message).</li>
-      <li><strong>Cloudflare</strong>: hosting and security for this website.</li>
+      <li><strong>Supabase</strong>: database, account sign-in and private storage of photos and documents.</li>
+      <li><strong>Render</strong>: hosting of our application servers.</li>
+      <li><strong>Cloudflare</strong>: hosting and security for this website and our admin tools.</li>
+      <li><strong>mNotify (BMS Africa)</strong>: delivery of SMS codes (your phone number and the message).</li>
+      <li><strong>Mapbox</strong>: maps, road distance for pricing, routes and turning a map pin into an address (map coordinates).</li>
+      <li><strong>OpenStreetMap search (Photon, operated by komoot) and HERE</strong>: finding places from the words you type, with your approximate position.</li>
+      <li><strong>Google</strong>: sign-in, if you choose "Continue with Google"; maps on Android and turn-by-turn directions if you open Google Maps.</li>
+      <li><strong>Apple</strong>: sign-in, if you choose "Continue with Apple"; maps on iPhone.</li>
+      <li><strong>Paystack</strong>: rider subscription payments.</li>
+      <li><strong>WhatsApp</strong>: only if you choose to contact someone through WhatsApp, which opens the WhatsApp app under its own terms.</li>
     </ul>
     <p>
       We may also disclose data where required by Ghanaian law or a lawful request from
       authorities, or to protect the safety of riders, customers or the public.
     </p>
 
-    <h2 id="transfers">5. Where data is stored</h2>
+    <h2 id="transfers">8. Where data is stored</h2>
     <p>
-      Some of our providers store or process data outside Ghana. Where this happens we use
-      providers that apply appropriate security safeguards, as required by Act 843.
+      Some of our providers store or process data outside Ghana, including in the European Union.
+      Where this happens we use providers that apply appropriate security safeguards, as required
+      by Act 843.
     </p>
 
-    <h2 id="retention">6. How long we keep it</h2>
+    <h2 id="retention">9. How long we keep it</h2>
     <ul>
-      <li>Account, rider profile and compliance documents: while your account is open, and up to 12 months after it is closed, unless you ask us to delete them sooner and we have no legal reason to keep them.</li>
+      <li>Accounts and profiles: while your account is open, and up to 12 months after it is closed, unless you ask us to delete them sooner and we have no legal reason to keep them.</li>
+      <li>Delivery records (addresses, contacts, fare, status, rating): up to 6 years, for accounting, tax and dispute handling.</li>
+      <li>Package photos, chat messages and chat photos: up to 12 months after the delivery, so we can handle questions and claims.</li>
+      <li>Rider compliance documents: while the rider account is open, and up to 12 months after it is closed.</li>
       <li>Payment and subscription records: 6 years, to meet tax and accounting obligations.</li>
-      <li>Approval decisions and account audit logs: for as long as the related account records are kept.</li>
-      <li>Unused SMS verification codes: deleted within 10 minutes.</li>
+      <li>Rider position: only the latest position is kept while a rider is online; it is not kept as a history.</li>
+      <li>Approval decisions and admin audit logs: for as long as the related account records are kept.</li>
+      <li>Unused SMS codes: expire after 10 minutes.</li>
     </ul>
 
-    <h2 id="security">7. Security</h2>
+    <h2 id="device">10. Data kept only on your phone</h2>
     <p>
-      Data is encrypted in transit (HTTPS/TLS). Access to rider data is restricted to authorised
-      staff, sign-in sessions use signed tokens, verification codes are hashed and rate-limited,
-      and we keep audit records of administrative actions. No system is perfectly secure; if a
-      breach affects your data we will notify you and the Data Protection Commission as the law
-      requires.
+      To make signing back in quicker, the apps remember the first name and phone number of the last
+      person who signed in on that phone, in the phone's encrypted storage. It is never sent to us
+      and you can remove it with "Use another account". Your sign-in session is also stored in the
+      phone's encrypted storage.
     </p>
 
-    <h2 id="rights">8. Your rights</h2>
+    <h2 id="security">11. Security</h2>
+    <p>
+      Data is encrypted in transit (HTTPS/TLS). Photos and documents are kept in private storage and
+      shown only to the people described above. Access to personal data is restricted to authorised
+      staff, admin tools are protected by an additional sign-in, sign-in sessions use signed tokens,
+      codes are rate-limited, and we keep audit records of administrative actions. No system is
+      perfectly secure; if a breach affects your data we will notify you and the Data Protection
+      Commission as the law requires.
+    </p>
+
+    <h2 id="rights">12. Your rights</h2>
     <p>Under Act 843 you can ask us to:</p>
     <ul>
       <li>tell you what personal data we hold about you and give you a copy;</li>
-      <li>correct inaccurate data;</li>
+      <li>correct inaccurate data (you can also edit your name and email in the app's Account page);</li>
       <li>delete your data, or stop or limit how we use it, where the law allows;</li>
-      <li>withdraw consent you previously gave.</li>
+      <li>withdraw consent you previously gave (for example, turn off location or camera access in your phone's settings).</li>
     </ul>
     <p>
       Email us at the address below; we will respond within the time the law requires. If you
@@ -158,13 +242,13 @@
       <a href="https://dataprotection.org.gh" rel="noopener">Data Protection Commission</a>.
     </p>
 
-    <h2 id="age">9. Age requirement</h2>
-    <p>GhanaDash rider accounts are for people aged 18 or older. We do not knowingly collect data from children.</p>
+    <h2 id="age">13. Age requirement</h2>
+    <p>GhanaDash accounts are for people aged 18 or older. We do not knowingly collect data from children.</p>
 
-    <h2 id="changes">10. Changes</h2>
-    <p>We will post any changes here with a new effective date, and tell riders in the app about significant changes.</p>
+    <h2 id="changes">14. Changes</h2>
+    <p>We will post any changes here with a new effective date, and tell you in the apps about significant changes.</p>
 
-    <h2 id="contact">11. Contact</h2>
+    <h2 id="contact">15. Contact</h2>
     <p>
       Globitech Cyber Solutions (operator of GhanaDash)<br>
       Email: <a href="mailto:support@globitechcybersolutions.com">support@globitechcybersolutions.com</a><br>
