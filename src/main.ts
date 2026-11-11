@@ -8,6 +8,7 @@ import * as express from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { productionEnvProblems } from './config/production-env';
+import { configureBodyParsers } from './config/body-parsers';
 import { cloudflareAccessFromEnv } from './admin/cloudflare-access';
 
 async function bootstrap(): Promise<void> {
@@ -84,8 +85,8 @@ async function bootstrap(): Promise<void> {
     ? parseInt(process.env.MAX_BODY_SIZE_BYTES, 10)
     : 102400; // 100 KB default
 
-  app.use(express.json({ limit: maxBodySize }));
-  app.use(express.urlencoded({ extended: true, limit: maxBodySize }));
+  // Keeps req.rawBody for signed webhooks (see configureBodyParsers).
+  configureBodyParsers(app, maxBodySize);
 
   // Let the host stop the server cleanly on deploys: close the DB pool and the dispatch timer.
   app.enableShutdownHooks();
