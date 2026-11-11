@@ -265,6 +265,55 @@ export class AdminService {
     return this.requireOverview(riderId);
   }
 
+  /**
+   * Ends a rider's free trial now (e.g. to test or start paid subscriptions). With no paid week
+   * the rider is suspended at once (an ended trial gets no automatic grace) and sees "Renew" in
+   * the app. The trial can't be restarted. Always audited with the admin and the reason.
+   */
+  async endTrial(riderId: string, adminId: string, reason: string): Promise<AdminRiderOverview> {
+    await this.db.withTransaction(async (client) => {
+      await lockRiderStatus(client, riderId);
+      const sub = await client.query<{
+        id: string;
+        status: string;
+        trial_ends_at: Date | null;
+        paid_until: Date | null;
+      }>(
+        `SELECT id, status, trial_ends_at, paid_until FROM subscriptions WHERE rider_id = $1 FOR UPDATE`,
+        [riderId],
+      );
+      const row = sub.rows[0];
+      if (!row) throw new ConflictException('This rider has no subscription yet (not approved).');
+      if (!row.trial_ends_at || new Date(row.trial_ends_at).getTime() <= Date.now()) {
+        throw new ConflictException('This rider is not on a free trial.');
+      }
+      if (row.paid_until && new Date(row.paid_until).getTime() > Date.now()) {
+        throw new ConflictException(
+          'This rider also has paid time, so ending the trial would not change their access.',
+        );
+      }
+      await client.query(
+        `UPDATE subscriptions
+         SET trial_ends_at = NOW(), grace_ends_at = NULL, trial_used = TRUE, updated_at = NOW()
+         WHERE id = $1`,
+        [row.id],
+      );
+      await client.query(
+        `INSERT INTO subscription_events (
+           subscription_id, rider_id, event_type, from_status, to_status, reason, actor_id, metadata
+         ) VALUES ($1, $2, 'ADMIN_TRIAL_ENDED', 'TRIAL', 'SUSPENDED', $3, $4, $5)`,
+        [
+          row.id,
+          riderId,
+          reason.trim(),
+          adminActor(adminId),
+          JSON.stringify({ trialEndsAtWas: new Date(row.trial_ends_at).toISOString() }),
+        ],
+      );
+    });
+    return this.requireOverview(riderId);
+  }
+
   private async requireOverview(riderId: string): Promise<AdminRiderOverview> {
     const [rider] = await this.listRiders(riderId);
     if (!rider) {

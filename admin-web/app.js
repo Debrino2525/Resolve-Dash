@@ -596,6 +596,9 @@
       if (!allApproved) actions += '<p class="small muted" style="margin:0">Approve all ' + docs.requiredCount + ' documents to enable rider approval (' + docs.approvedCount + '/' + docs.requiredCount + ').</p>';
     }
     actions += '<button class="btn" data-action="grant-access">' + ico('gift') + 'Grant 7 days free</button>';
+    // Only offered while the rider is on a free trial with no paid time on top.
+    var onTrial = sub && sub.status === 'TRIAL' && !(sub.paidUntil && new Date(sub.paidUntil) > new Date());
+    if (onTrial) actions += '<button class="btn" data-action="end-trial">' + ico('close') + 'End trial now</button>';
     if (d.onboardingStatus !== 'REJECTED') actions += '<button class="btn btn-danger" data-action="reject-rider">' + ico('close') + 'Reject application</button>';
 
     render(
@@ -693,6 +696,12 @@
         button.disabled = true;
         await post(base + '/grant-access', { reason: c3.reason || undefined });
         await reloadRider('7 free days granted to ' + name);
+      } else if (action === 'end-trial') {
+        var c4 = await confirmDialog({ title: 'End ' + name + "'s free trial now?", body: name + ' goes offline straight away and must pay the weekly subscription in the app (Renew) to take deliveries again. The trial cannot be restarted, but you can still grant free days. Recorded with your account.', okLabel: 'End trial', danger: true, reason: { label: 'Reason (kept in the audit log)', placeholder: 'e.g. Testing Paystack payments', required: true } });
+        if (!c4.ok) return;
+        button.disabled = true;
+        await post(base + '/end-trial', { reason: c4.reason });
+        await reloadRider('Trial ended for ' + name);
       }
     } catch (err) {
       fail(err);

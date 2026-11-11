@@ -25,11 +25,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { authThrottleLimit, throttleTtlMs } from '../common/throttle.config';
 import { AdminAuthService, AdminSession } from './admin-auth.service';
 import { AdminInsightsService } from './admin-insights.service';
-import {
-  AdminOperationsService,
-  parseDeliveryFilter,
-  parsePage,
-} from './admin-operations.service';
+import { AdminOperationsService, parseDeliveryFilter, parsePage } from './admin-operations.service';
 import { readPortalAsset } from './admin-portal.assets';
 import { AdminService } from './admin.service';
 import {
@@ -58,6 +54,7 @@ const reviewSchema = z.object({
 });
 
 const noteSchema = z.object({ reason: z.string().trim().max(500).optional() });
+const requiredReasonSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(320),
@@ -198,6 +195,19 @@ export class AdminController {
       admin.id,
       noteSchema.parse(body ?? {}).reason,
     );
+  }
+
+  /** End a rider's free trial now; they must then pay to go online. Reason required (audited). */
+  @Post('api/riders/:id/end-trial')
+  @UseGuards(AdminGuard)
+  async endTrial(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AuthUser,
+    @Body() body: unknown,
+  ): Promise<AdminRiderOverview> {
+    const parsed = requiredReasonSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('Give a reason (kept in the audit log)');
+    return this.adminService.endTrial(id, admin.id, parsed.data.reason);
   }
 
   /** The rider's four compliance documents and their review status (no file contents). */
