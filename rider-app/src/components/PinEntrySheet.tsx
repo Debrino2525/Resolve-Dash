@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -61,7 +60,7 @@ export function PinEntrySheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={busy ? undefined : onClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView behavior="padding">
         <View style={styles.sheet}>
           <View style={styles.cash}>
             <Ionicons name="cash" size={22} color={Colors.dispatchGreen} />

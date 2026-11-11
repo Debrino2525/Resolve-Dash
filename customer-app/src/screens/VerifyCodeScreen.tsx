@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BrandMark, CodeBoxes, PillButton } from '../components/auth/AuthParts';
 import { InlineNotice } from '../components/InlineNotice';
 import { Colors, Elevation, Radii, Spacing, Typography } from '../theme/theme';
@@ -57,7 +57,7 @@ export function VerifyCodeScreen({ phoneE164, busy, error, onVerify, onResend, o
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.flex} behavior="padding">
       <View style={styles.header}>
         <TouchableOpacity onPress={onEdit} style={styles.back} accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={22} color={Colors.textPrimary} />

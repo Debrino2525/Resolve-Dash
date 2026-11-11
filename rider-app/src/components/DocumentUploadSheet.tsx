@@ -128,7 +128,7 @@ export function DocumentUploadSheet({
     <Modal visible animationType="slide" onRequestClose={busy ? undefined : onClose}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} disabled={busy} accessibilityRole="button" style={styles.headerBtn}>
