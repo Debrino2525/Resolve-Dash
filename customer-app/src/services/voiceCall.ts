@@ -1,4 +1,4 @@
-import { PermissionsAndroid, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform, TurboModuleRegistry } from 'react-native';
 
 /**
  * Voice calls through Agora (customer ↔ rider), audio only.
@@ -29,6 +29,12 @@ type AgoraModule = typeof import('react-native-agora');
 let agora: AgoraModule | null | undefined;
 function loadAgora(): AgoraModule | null {
   if (agora !== undefined) return agora;
+  // Check for the native module first, without importing the library: in development a module
+  // that throws while loading is reported as a fatal error even inside try/catch (Expo Go).
+  if (!TurboModuleRegistry.get('AgoraRtcNg') && NativeModules.AgoraRtcNg == null) {
+    agora = null;
+    return agora;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('react-native-agora') as AgoraModule;
