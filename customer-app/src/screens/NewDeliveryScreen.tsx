@@ -23,6 +23,7 @@ import { Colors, Radii, Spacing, Typography } from '../theme/theme';
 import {
   CustomerProfile,
   DeliveryDraft,
+  MAX_DROPOFFS,
   PACKAGE_OPTIONS,
   PackageType,
   Place,
@@ -51,6 +52,8 @@ interface StopForm {
 
 const GPS_RE = /^[A-Z]{2}-?\d{3,4}-?\d{3,4}$/;
 
+const emptyDrop = (): StopForm => ({ place: null, landmark: '', gpsCode: '', name: '', phone: '' });
+
 const fromStop = (s: DeliveryDraft['pickup']): StopForm => ({
   place: { lat: s.lat, lng: s.lng, address: s.address },
   landmark: s.landmark ?? '',
@@ -66,14 +69,20 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
       ? fromStop(initial.pickup)
       : { place: null, landmark: '', gpsCode: '', name: profile.fullName, phone: formatGhanaLocal(profile.phoneNumber) },
   );
-  const [dropoff, setDropoff] = useState<StopForm>(
-    initial ? fromStop(initial.dropoff) : { place: null, landmark: '', gpsCode: '', name: '', phone: '' },
+  // Drop-offs in visiting order; the last one is the final drop-off.
+  const [drops, setDrops] = useState<StopForm[]>(
+    initial ? [...(initial.stops ?? []), initial.dropoff].map(fromStop) : [emptyDrop()],
   );
+  const setDrop = (i: number, f: StopForm | ((s: StopForm) => StopForm)): void =>
+    setDrops((all) => all.map((s, j) => (j === i ? (typeof f === 'function' ? f(s) : f) : s)));
+  const multi = drops.length > 1;
+  const dropTitle = (i: number): string => (multi ? `Drop-off ${i + 1}` : 'Drop-off');
   const [packageType, setPackageType] = useState<PackageType>(initial?.packageType ?? 'SMALL_PARCEL');
   const [fragile, setFragile] = useState(initial?.fragile ?? false);
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [photo, setPhoto] = useState<PickedPhoto | null>(initial?.packagePhoto ?? null);
-  const [picking, setPicking] = useState<'pickup' | 'dropoff' | null>(null);
+  /** 'pickup', or the index of the drop-off being placed. */
+  const [picking, setPicking] = useState<'pickup' | number | null>(null);
   const [here, setHere] = useState<Point | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +120,10 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
     if (gps && !GPS_RE.test(gps)) return 'GhanaPost GPS codes look like GA-123-4567';
     return null;
   };
-  const firstProblem = problems(pickup, 'pickup') ?? problems(dropoff, 'drop-off');
+  const firstProblem =
+    problems(pickup, 'pickup') ??
+    drops.map((d, i) => problems(d, multi ? `drop-off ${i + 1}` : 'drop-off')).find(Boolean) ??
+    null;
 
   const toStop = (s: StopForm): DeliveryDraft['pickup'] => ({
     lat: s.place!.lat,
@@ -131,15 +143,17 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
     setBusy(true);
     setError(null);
     try {
+      const all = drops.map(toStop);
       const draft: DeliveryDraft = {
         pickup: toStop(pickup),
-        dropoff: toStop(dropoff),
+        stops: all.slice(0, -1),
+        dropoff: all[all.length - 1],
         packageType,
         fragile,
         notes: notes.trim() || null,
         packagePhoto: photo,
       };
-      const quote = await getQuote(draft.pickup, draft.dropoff);
+      const quote = await getQuote(draft.pickup, draft.dropoff, draft.stops);
       onQuoted(draft, quote);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not get a price. Please try again.');
@@ -161,16 +175,37 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
           onPickPlace={() => setPicking('pickup')}
           contactLabel="Sender"
         />
-        <StopSection
-          title="Drop-off"
-          icon="flag"
-          tone={Colors.textPrimary}
-          form={dropoff}
-          onChange={setDropoff}
-          onPickPlace={() => setPicking('dropoff')}
-          contactLabel="Receiver"
-          onUseMe={() => setDropoff((s) => ({ ...s, name: profile.fullName, phone: formatGhanaLocal(profile.phoneNumber) }))}
-        />
+        {drops.map((d, i) => (
+          <StopSection
+            key={i}
+            title={dropTitle(i)}
+            icon="flag"
+            number={multi ? i + 1 : undefined}
+            tone={Colors.textPrimary}
+            form={d}
+            onChange={(f) => setDrop(i, f)}
+            onPickPlace={() => setPicking(i)}
+            contactLabel="Receiver"
+            onUseMe={() => setDrop(i, (s) => ({ ...s, name: profile.fullName, phone: formatGhanaLocal(profile.phoneNumber) }))}
+            onRemove={multi ? () => setDrops((all) => all.filter((_, j) => j !== i)) : undefined}
+          />
+        ))}
+        {drops.length < MAX_DROPOFFS && (
+          <TouchableOpacity
+            style={styles.addDrop}
+            onPress={() => setDrops((all) => [...all, emptyDrop()])}
+            accessibilityRole="button"
+          >
+            <Ionicons name="add-circle-outline" size={22} color={Colors.dispatchGreenLight} />
+            <View style={styles.flex}>
+              <Text style={styles.addDropText}>Add another drop-off</Text>
+              <Text style={styles.switchHint}>
+                One rider delivers to each place in this order. Up to {MAX_DROPOFFS} drop-offs; each extra one adds a small
+                charge.
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>What are you sending?</Text>
@@ -263,9 +298,9 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
 
       <PlacePicker
         visible={picking !== null}
-        title={picking === 'pickup' ? 'Pickup location' : 'Drop-off location'}
+        title={picking === 'pickup' ? 'Pickup location' : `${typeof picking === 'number' ? dropTitle(picking) : 'Drop-off'} location`}
         near={here}
-        initial={(picking === 'pickup' ? pickup.place : dropoff.place) ?? null}
+        initial={(picking === 'pickup' ? pickup.place : typeof picking === 'number' ? drops[picking]?.place : null) ?? null}
         onClose={() => setPicking(null)}
         onPick={(place, extras) => {
           const note = extras ? 'Your saved spot from an earlier delivery.' : 'Exact spot confirmed on the map.';
@@ -278,7 +313,7 @@ export function NewDeliveryScreen({ profile, initial, onBack, onQuoted }: NewDel
             gpsCode: s.gpsCode.trim() || extras?.gpsCode || '',
           });
           if (picking === 'pickup') setPickup(apply);
-          else setDropoff(apply);
+          else if (typeof picking === 'number') setDrop(picking, apply);
           setPicking(null);
           setError(null);
         }}
@@ -296,9 +331,14 @@ function StopSection({
   onPickPlace,
   contactLabel,
   onUseMe,
+  onRemove,
+  number,
 }: {
   title: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
+  /** Shown in the dot instead of the icon (numbered drop-offs). */
+  number?: number;
+  onRemove?: () => void;
   tone: string;
   form: StopForm;
   onChange: (f: StopForm) => void;
@@ -311,9 +351,14 @@ function StopSection({
     <View style={styles.card}>
       <View style={styles.stopHeader}>
         <View style={[styles.stopDot, { backgroundColor: tone }]}>
-          <Ionicons name={icon} size={14} color="#FFFFFF" />
+          {number ? <Text style={styles.dotNumber}>{number}</Text> : <Ionicons name={icon} size={14} color="#FFFFFF" />}
         </View>
-        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={[styles.cardTitle, styles.flex]}>{title}</Text>
+        {onRemove && (
+          <TouchableOpacity onPress={onRemove} accessibilityRole="button" accessibilityLabel={`Remove ${title}`} hitSlop={8}>
+            <Text style={styles.removeLink}>Remove</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <TouchableOpacity style={styles.placeBtn} onPress={onPickPlace} accessibilityRole="button">
@@ -394,6 +439,18 @@ const styles = StyleSheet.create({
   cardTitle: { ...Typography.h3, color: Colors.textPrimary },
   stopHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
   stopDot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  dotNumber: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  addDrop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: Colors.cardBorder,
+    padding: Spacing.lg,
+  },
+  addDropText: { ...Typography.bodyBold, color: Colors.dispatchGreenLight },
   placeBtn: {
     flexDirection: 'row',
     alignItems: 'center',

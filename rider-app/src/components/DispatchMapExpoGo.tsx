@@ -11,6 +11,10 @@ interface DispatchMapProps {
   rider: LatLng | null;
   pickup?: LatLng | null;
   dropoff?: LatLng | null;
+  /** Drop-offs on the way to the final one, numbered 1, 2, 3 in visiting order. */
+  waypoints?: LatLng[];
+  /** Number shown on the first waypoint (later ones count up). */
+  firstWaypointNumber?: number;
   /** Road geometry for the current job; falls back to straight segments when absent. */
   route?: LatLng[] | null;
   /** Keep the camera on the rider (on duty, no active job). */
@@ -51,6 +55,8 @@ export function DispatchMapExpoGo({
   rider,
   pickup,
   dropoff,
+  waypoints = [],
+  firstWaypointNumber = 1,
   route,
   follow,
   bottomInset,
@@ -60,7 +66,7 @@ export function DispatchMapExpoGo({
 }: DispatchMapProps): React.JSX.Element {
   const map = useRef<MapView>(null);
   const centre = rider ?? GHANA_DEFAULT_CENTER;
-  const stops = [rider, pickup, dropoff].filter((p): p is LatLng => Boolean(p));
+  const stops = [rider, pickup, ...waypoints, dropoff].filter((p): p is LatLng => Boolean(p));
   const line = route && route.length >= 2 ? route : stops;
 
   const navigating = Boolean(navigationCamera);
@@ -173,6 +179,13 @@ export function DispatchMapExpoGo({
             </View>
           </Marker>
         )}
+        {waypoints.map((w, i) => (
+          <Marker key={`w${i}`} coordinate={w} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+            <View style={[styles.pin, { backgroundColor: Colors.harborBlue }]} accessibilityLabel={`Drop-off ${firstWaypointNumber + i}`}>
+              <Text style={styles.pinNumber}>{firstWaypointNumber + i}</Text>
+            </View>
+          </Marker>
+        ))}
         {dropoff && (
           <Marker
             coordinate={dropoff}
@@ -211,6 +224,7 @@ export function DispatchMapExpoGo({
 }
 
 const styles = StyleSheet.create({
+  pinNumber: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   pin: {
     width: 32,
     height: 32,

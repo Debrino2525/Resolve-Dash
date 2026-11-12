@@ -41,6 +41,34 @@ export interface OrderStop extends Point {
   contactPhone: string;
 }
 
+export type StopStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
+
+/** A drop-off before the final one (multi-stop), with the PIN to give that receiver. */
+export interface StopProgress extends OrderStop {
+  index: number;
+  status: StopStatus;
+  doneAt: string | null;
+  failReason: string | null;
+  pin: string;
+}
+
+/** Up to 4 drop-offs per delivery, all with one rider. */
+export const MAX_DROPOFFS = 4;
+
+/** Drop-offs before the final one (older API responses have none). */
+export const extraStops = (o: { stops?: StopProgress[] | null }): StopProgress[] => o.stops ?? [];
+
+/** A stored drop-off back to a plain stop (for "Book again"). */
+export const plainStop = (s: OrderStop): OrderStop => ({
+  lat: s.lat,
+  lng: s.lng,
+  address: s.address,
+  landmark: s.landmark,
+  gpsCode: s.gpsCode,
+  contactName: s.contactName,
+  contactPhone: s.contactPhone,
+});
+
 export interface AssignedRider {
   id: string;
   fullName: string;
@@ -59,6 +87,8 @@ export interface CustomerOrder {
   riderId: string | null;
   status: OrderStatus;
   pickup: OrderStop;
+  /** Drop-offs before the final one, in visiting order (missing or empty for a single drop). */
+  stops?: StopProgress[];
   dropoff: OrderStop;
   packageType: PackageType;
   fragile: boolean;
@@ -67,6 +97,7 @@ export interface CustomerOrder {
   durationSeconds: number;
   baseFarePesewas: number;
   distanceFarePesewas: number;
+  stopsFarePesewas?: number;
   farePesewas: number;
   paymentMethod: 'CASH';
   deliveryPin: string;
@@ -92,6 +123,8 @@ export interface Quote {
   durationSeconds: number;
   baseFarePesewas: number;
   distanceFarePesewas: number;
+  /** Charge for the drop-offs after the first (0 for one drop-off). */
+  stopsFarePesewas?: number;
   farePesewas: number;
   /** True when the road route was unavailable and distance was estimated. */
   estimated: boolean;
@@ -114,6 +147,9 @@ export interface Place extends Point {
 
 export interface DeliveryDraft {
   pickup: OrderStop;
+  /** Drop-offs before the final one, in visiting order. */
+  stops?: OrderStop[];
+  /** The final drop-off. */
   dropoff: OrderStop;
   packageType: PackageType;
   fragile: boolean;

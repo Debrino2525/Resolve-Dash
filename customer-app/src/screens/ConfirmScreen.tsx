@@ -26,9 +26,10 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
   // Uploaded once, reused if booking is retried (e.g. after a price refresh).
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const stops = draft.stops ?? [];
 
   useEffect(() => {
-    void fetchRouteLine(draft.pickup, draft.dropoff).then(setRoute);
+    void fetchRouteLine(draft.pickup, draft.dropoff, draft.stops ?? []).then(setRoute);
   }, [draft]);
 
   const book = async (): Promise<void> => {
@@ -38,7 +39,7 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
       let q = quote;
       // Quotes are valid for 10 minutes; refresh quietly if this one has run out.
       if (new Date(q.expiresAt).getTime() - Date.now() < 15_000) {
-        q = await getQuote(draft.pickup, draft.dropoff);
+        q = await getQuote(draft.pickup, draft.dropoff, draft.stops ?? []);
         setQuote(q);
         if (q.farePesewas !== quote.farePesewas) {
           setError(`The price was updated to ${cedis(q.farePesewas)}. Tap Request rider again to confirm.`);
@@ -55,7 +56,7 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not book the delivery';
       if (err instanceof ApiError && /quote/i.test(msg)) {
-        const fresh = await getQuote(draft.pickup, draft.dropoff).catch(() => null);
+        const fresh = await getQuote(draft.pickup, draft.dropoff, draft.stops ?? []).catch(() => null);
         if (fresh) setQuote(fresh);
         setError('The price needed refreshing. Check it and tap Request rider again.');
       } else {
@@ -70,13 +71,25 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
       <ScreenHeader title="Confirm delivery" onBack={busy ? undefined : onBack} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.map}>
-          <DeliveryMap pickup={draft.pickup} dropoff={draft.dropoff} route={route} showsUser={false} edgePadding={{ top: 40, bottom: 40 }} />
+          <DeliveryMap pickup={draft.pickup} stops={stops} dropoff={draft.dropoff} route={route} showsUser={false} edgePadding={{ top: 40, bottom: 40 }} />
         </View>
 
         <View style={styles.card}>
           <StopRow color={Colors.dispatchGreen} icon="cube" label="Pickup" stop={draft.pickup} />
           <View style={styles.connector} />
-          <StopRow color={Colors.textPrimary} icon="flag" label="Drop-off" stop={draft.dropoff} />
+          {stops.map((s, i) => (
+            <React.Fragment key={i}>
+              <StopRow color={Colors.textPrimary} number={i + 1} label={`Drop-off ${i + 1}`} stop={s} />
+              <View style={styles.connector} />
+            </React.Fragment>
+          ))}
+          <StopRow
+            color={Colors.textPrimary}
+            icon={stops.length ? undefined : 'flag'}
+            number={stops.length ? stops.length + 1 : undefined}
+            label={stops.length ? `Drop-off ${stops.length + 1} (last)` : 'Drop-off'}
+            stop={draft.dropoff}
+          />
           <View style={styles.meta}>
             <Meta icon="speedometer-outline" text={`${formatDistance(quote.distanceMeters)} by road`} />
             <Meta icon="time-outline" text={`~${formatDuration(quote.durationSeconds)} ride`} />
@@ -91,6 +104,12 @@ export function ConfirmScreen({ draft, quote: initialQuote, onBack, onBooked }: 
           <Text style={styles.cardTitle}>Price</Text>
           <Line label="Base fare" value={cedis(quote.baseFarePesewas)} />
           <Line label={`Distance (${formatDistance(quote.distanceMeters)})`} value={cedis(quote.distanceFarePesewas)} />
+          {stops.length > 0 && (
+            <Line
+              label={`Extra drop-off${stops.length === 1 ? '' : 's'} (${stops.length})`}
+              value={cedis(quote.stopsFarePesewas ?? 0)}
+            />
+          )}
           <View style={styles.divider} />
           <Line label="Total" value={cedis(quote.farePesewas)} strong />
           {quote.estimated && (
@@ -128,16 +147,19 @@ function StopRow({
   icon,
   label,
   stop,
+  number,
 }: {
   color: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon?: React.ComponentProps<typeof Ionicons>['name'];
+  /** Shown in the dot instead of an icon (numbered drop-offs). */
+  number?: number;
   label: string;
   stop: DeliveryDraft['pickup'];
 }): React.JSX.Element {
   return (
     <View style={styles.stop}>
       <View style={[styles.stopDot, { backgroundColor: color }]}>
-        <Ionicons name={icon} size={13} color="#FFFFFF" />
+        {number ? <Text style={styles.dotNumber}>{number}</Text> : <Ionicons name={icon ?? 'flag'} size={13} color="#FFFFFF" />}
       </View>
       <View style={styles.flex}>
         <Text style={styles.stopLabel}>{label}</Text>
@@ -174,6 +196,7 @@ const styles = StyleSheet.create({
   stop: { flexDirection: 'row', gap: Spacing.md },
   stopDot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   stopLabel: { ...Typography.caption, color: Colors.textMuted },
+  dotNumber: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   stopAddress: { ...Typography.bodyBold, color: Colors.textPrimary },
   connector: { width: 2, height: 16, backgroundColor: Colors.cardBorder, marginLeft: 12, marginVertical: 4 },
   meta: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginTop: Spacing.lg },

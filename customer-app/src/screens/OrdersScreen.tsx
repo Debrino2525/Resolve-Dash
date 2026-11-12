@@ -62,6 +62,7 @@ export function OrdersScreen({
               </Text>
               <Text style={styles.addr} numberOfLines={1}>
                 To {o.dropoff.address}
+                {o.stops?.length ? ` + ${o.stops.length} more` : ''}
               </Text>
               <View style={styles.bottom}>
                 <Text style={styles.meta}>

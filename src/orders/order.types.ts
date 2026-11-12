@@ -16,6 +16,29 @@ export interface OrderStop {
   contactPhone: string;
 }
 
+export type StopStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
+
+/**
+ * A drop-off the rider visits before the final one (multi-stop deliveries). Stored on the
+ * order in visiting order; each has its own handover PIN.
+ */
+export interface ExtraStop extends OrderStop {
+  pin: string;
+  pinAttempts: number;
+  status: StopStatus;
+  doneAt: string | null;
+  failReason: string | null;
+}
+
+/** A drop-off before the final one as the apps see it (no PIN, no attempt counter). */
+export interface StopProgress extends OrderStop {
+  /** 0-based position among the drop-offs before the final one. */
+  index: number;
+  status: StopStatus;
+  doneAt: string | null;
+  failReason: string | null;
+}
+
 /** A stop the customer used before, offered again in the place picker (their own orders only). */
 export interface RecentPlace {
   lat: number;
@@ -35,6 +58,8 @@ export interface DeliveryOrder {
   status: OrderStatus;
   pickup: OrderStop;
   dropoff: OrderStop;
+  /** Drop-offs before the final one, in visiting order (empty for a single drop-off). */
+  extraStops: ExtraStop[];
   packageType: PackageType;
   fragile: boolean;
   notes: string | null;
@@ -42,6 +67,7 @@ export interface DeliveryOrder {
   durationSeconds: number;
   baseFarePesewas: number;
   distanceFarePesewas: number;
+  stopsFarePesewas: number;
   farePesewas: number;
   paymentMethod: 'CASH';
   deliveryPin: string;
@@ -77,8 +103,10 @@ export interface AssignedRider {
 /** What the customer app receives. Includes the handover PIN; never sent to riders. */
 export interface CustomerOrderView extends Omit<
   DeliveryOrder,
-  'pinAttempts' | 'customerId' | 'packagePhotoPath'
+  'pinAttempts' | 'customerId' | 'packagePhotoPath' | 'extraStops'
 > {
+  /** Drop-offs before the final one, with the PIN the customer gives each receiver. */
+  stops: (StopProgress & { pin: string })[];
   rider: AssignedRider | null;
   hasPackagePhoto: boolean;
   messageCount: number;
@@ -92,6 +120,8 @@ export interface RiderJobView {
   code: string;
   status: OrderStatus;
   pickup: OrderStop;
+  /** Drop-offs to complete, in order, before the final drop-off (empty for a single drop). */
+  stops: StopProgress[];
   dropoff: OrderStop;
   packageType: PackageType;
   fragile: boolean;
@@ -115,6 +145,8 @@ export interface RiderOfferView {
   expiresAt: string;
   distanceToPickupMeters: number;
   pickup: { lat: number; lng: number; address: string; landmark: string | null };
+  /** Drop-offs on the way, before the final drop-off (empty for a single drop). */
+  stops: { lat: number; lng: number; address: string; landmark: string | null }[];
   dropoff: { lat: number; lng: number; address: string; landmark: string | null };
   packageType: PackageType;
   fragile: boolean;

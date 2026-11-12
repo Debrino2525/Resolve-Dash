@@ -7,6 +7,8 @@ import {
   getDispatchState,
   markDelivered,
   markPickedUp,
+  markStopDelivered,
+  markStopFailed,
   releaseJob,
   updatePresence,
 } from '../api/backendClient';
@@ -29,6 +31,9 @@ export interface DispatchControls {
   pickedUp: (jobId: string) => Promise<void>;
   /** Throws with the server's message (e.g. "Wrong PIN. 3 attempts left.") so the PIN sheet can show it. */
   delivered: (jobId: string, pin: string) => Promise<void>;
+  /** Multi-stop drop-off before the final one; throws the server's message like `delivered`. */
+  stopDelivered: (jobId: string, index: number, pin: string) => Promise<void>;
+  stopFailed: (jobId: string, index: number, reason: string) => Promise<void>;
   release: (jobId: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -136,6 +141,8 @@ export function useDispatch(position: LatLng | null): DispatchControls {
     decline: (id) => run(() => declineOffer(id)),
     pickedUp: (id) => run(() => markPickedUp(id)),
     delivered: (id, pin) => run(() => markDelivered(id, pin), true),
+    stopDelivered: (id, index, pin) => run(() => markStopDelivered(id, index, pin), true),
+    stopFailed: (id, index, reason) => run(() => markStopFailed(id, index, reason)),
     release: (id) => run(() => releaseJob(id)),
     refresh,
   };

@@ -263,6 +263,22 @@ export async function markDelivered(jobId: string, pin: string): Promise<Dispatc
   });
 }
 
+/** Multi-stop: hands over at a drop-off before the final one, with that receiver's PIN. */
+export async function markStopDelivered(jobId: string, index: number, pin: string): Promise<DispatchState> {
+  return authenticatedFetch<DispatchState>(`/riders/me/jobs/${jobId}/stops/${index}/delivered`, {
+    method: 'POST',
+    body: JSON.stringify({ pin }),
+  });
+}
+
+/** Multi-stop: couldn't hand over at this drop-off; records why so the customer sees it. */
+export async function markStopFailed(jobId: string, index: number, reason: string): Promise<DispatchState> {
+  return authenticatedFetch<DispatchState>(`/riders/me/jobs/${jobId}/stops/${index}/failed`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
 /** Hands an accepted (not yet picked up) job back to dispatch. */
 export async function releaseJob(jobId: string): Promise<DispatchState> {
   return authenticatedFetch<DispatchState>(`/riders/me/jobs/${jobId}/release`, { method: 'POST' });

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { PRESENCE_FRESH_SECONDS } from '../orders/dispatch.service';
+import { parseExtraStops } from '../orders/order.repository';
 import {
   AdminCustomer,
   AdminCustomerDetail,
@@ -120,6 +121,8 @@ interface DeliveryDetailRow extends DeliveryRow {
   rated_at: Date | null;
   pin_attempts: number;
   has_package_photo: boolean;
+  extra_stops: unknown;
+  stops_fare_pesewas: number | null;
 }
 
 /**
@@ -289,6 +292,7 @@ export class AdminOperationsService {
                 o.dropoff_gps_code, o.receiver_name, o.receiver_phone, o.notes, o.duration_s,
                 o.base_fare_pesewas, o.distance_fare_pesewas, o.payment_method,
                 o.rating_tags, o.rating_comment, o.rated_at, o.pin_attempts,
+                o.extra_stops, o.stops_fare_pesewas,
                 (o.package_photo_path IS NOT NULL) AS has_package_photo
          ${DELIVERY_FROM}
          WHERE o.id = $1`,
@@ -323,6 +327,21 @@ export class AdminOperationsService {
         contactName: row.pickup_contact_name,
         contactPhone: row.pickup_contact_phone,
       },
+      // The stop PINs never leave the API for the admin portal.
+      stops: parseExtraStops(row.extra_stops).map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+        address: s.address,
+        landmark: s.landmark,
+        gpsCode: s.gpsCode,
+        contactName: s.contactName,
+        contactPhone: s.contactPhone,
+        status: s.status,
+        doneAt: s.doneAt,
+        failReason: s.failReason,
+        pinAttempts: s.pinAttempts,
+      })),
+      stopsFarePesewas: Number(row.stops_fare_pesewas ?? 0),
       dropoff: {
         ...base.dropoff,
         gpsCode: row.dropoff_gps_code,

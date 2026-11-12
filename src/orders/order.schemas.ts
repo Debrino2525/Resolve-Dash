@@ -51,11 +51,19 @@ export const stopSchema = pointSchema.extend({
   contactPhone: phone,
 });
 
-export const quoteSchema = z.object({ pickup: pointSchema, dropoff: pointSchema });
+/** Drop-offs before the final one, in visiting order (up to 3, so 4 drop-offs in all). */
+const MAX_EXTRA = 3;
+
+export const quoteSchema = z.object({
+  pickup: pointSchema,
+  dropoff: pointSchema,
+  stops: z.array(pointSchema).max(MAX_EXTRA, 'Up to 4 drop-offs per delivery').default([]),
+});
 
 export const createOrderSchema = z.object({
   pickup: stopSchema,
   dropoff: stopSchema,
+  stops: z.array(stopSchema).max(MAX_EXTRA, 'Up to 4 drop-offs per delivery').default([]),
   packageType: z.enum(['DOCUMENT', 'SMALL_PARCEL', 'FOOD', 'LARGE_ITEM']),
   fragile: z.boolean().default(false),
   notes: optionalText(500),
@@ -77,6 +85,10 @@ export const presenceSchema = z.object({
   lng: z.number().gte(-180).lte(180).optional(),
   heading: z.number().gte(-1).lte(360).optional().nullable(),
   accuracy: z.number().gte(0).lte(100_000).optional().nullable(),
+});
+
+export const stopFailedSchema = z.object({
+  reason: z.string().trim().min(3, 'Say briefly why it could not be delivered').max(255),
 });
 
 export const pinSchema = z.object({

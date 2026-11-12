@@ -92,6 +92,7 @@ export function HomeScreen({ profile, activeOrders, onNewDelivery, onOpenOrder }
                   <Text style={styles.activeTitle}>{STATUS_LABEL[o.status]}</Text>
                   <Text style={styles.activeSub} numberOfLines={1}>
                     To {o.dropoff.address}
+                {o.stops?.length ? ` + ${o.stops.length} more` : ''}
                   </Text>
                 </View>
                 <View style={styles.activeRight}>

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Camera, LineLayer, LocationPuck, MapState, MapView, MarkerView, ShapeSource, StyleImport } from '@rnmapbox/maps';
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GHANA_DEFAULT_CENTER, LatLng } from '../services/location';
 import { Colors, Elevation, Radii, TOUCH_TARGET } from '../theme/theme';
 import { STANDARD_STYLE, zoomForDelta } from './mapSetup';
@@ -10,6 +10,10 @@ export interface DispatchMapProps {
   rider: LatLng | null;
   pickup?: LatLng | null;
   dropoff?: LatLng | null;
+  /** Drop-offs on the way to the final one, numbered 1, 2, 3 in visiting order. */
+  waypoints?: LatLng[];
+  /** Number shown on the first waypoint (later ones count up). */
+  firstWaypointNumber?: number;
   /** Road geometry for the current job; falls back to straight segments when absent. */
   route?: LatLng[] | null;
   /** Keep the camera on the rider (on duty, no active job). */
@@ -37,6 +41,8 @@ export function DispatchMapMapbox({
   rider,
   pickup,
   dropoff,
+  waypoints = [],
+  firstWaypointNumber = 1,
   route,
   follow,
   bottomInset,
@@ -46,7 +52,7 @@ export function DispatchMapMapbox({
 }: DispatchMapProps): React.JSX.Element {
   const camera = useRef<Camera>(null);
   const centre = rider ?? GHANA_DEFAULT_CENTER;
-  const stops = [rider, pickup, dropoff].filter((p): p is LatLng => Boolean(p));
+  const stops = [rider, pickup, ...waypoints, dropoff].filter((p): p is LatLng => Boolean(p));
   const hasRoute = Boolean(route && route.length >= 2);
   const line = hasRoute ? route! : stops;
   const navigating = Boolean(navigationCamera);
@@ -166,6 +172,13 @@ export function DispatchMapMapbox({
             </View>
           </MarkerView>
         )}
+        {waypoints.map((w, i) => (
+          <MarkerView key={`w${i}`} coordinate={pos(w)} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+            <View style={[styles.pin, { backgroundColor: Colors.harborBlue }]} accessibilityLabel={`Drop-off ${firstWaypointNumber + i}`}>
+              <Text style={styles.pinNumber}>{firstWaypointNumber + i}</Text>
+            </View>
+          </MarkerView>
+        ))}
         {dropoff && (
           <MarkerView coordinate={pos(dropoff)} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
             <View style={[styles.pin, { backgroundColor: Colors.harborBlue }]} accessibilityLabel="Drop-off">
@@ -189,6 +202,7 @@ export function DispatchMapMapbox({
 }
 
 const styles = StyleSheet.create({
+  pinNumber: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   pin: {
     width: 32,
     height: 32,

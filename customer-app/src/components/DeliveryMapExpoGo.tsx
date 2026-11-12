@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { CLEAN_MAP } from './mapStyle';
 import { DEFAULT_CENTRE } from '../services/location';
@@ -10,6 +10,8 @@ import { Point } from '../types/orders';
 interface DeliveryMapProps {
   pickup?: Point | null;
   dropoff?: Point | null;
+  /** Drop-offs before the final one, numbered 1, 2, 3 (done ones fade). */
+  stops?: (Point & { done?: boolean })[];
   rider?: (Point & { heading?: number | null }) | null;
   /** Approximate positions of nearby online riders (Home screen). */
   nearby?: Point[];
@@ -28,6 +30,7 @@ const ll = (p: Point): { latitude: number; longitude: number } => ({ latitude: p
 export function DeliveryMapExpoGo({
   pickup,
   dropoff,
+  stops = [],
   rider,
   nearby = [],
   center,
@@ -37,7 +40,7 @@ export function DeliveryMapExpoGo({
   showsUser = true,
 }: DeliveryMapProps): React.JSX.Element {
   const map = useRef<MapView>(null);
-  const focus = [pickup, dropoff, rider].filter((p): p is Point => Boolean(p));
+  const focus = [pickup, ...stops.filter((s) => !s.done), dropoff, rider].filter((p): p is Point => Boolean(p));
   const fitKey = focus.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|');
   const start = center ?? pickup ?? DEFAULT_CENTRE;
 
@@ -88,6 +91,16 @@ export function DeliveryMapExpoGo({
           </View>
         </Marker>
       )}
+      {stops.map((s, i) => (
+        <Marker key={`s${i}`} coordinate={ll(s)} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+          <View
+            style={[styles.stop, styles.numbered, s.done && styles.done]}
+            accessibilityLabel={`Drop-off ${i + 1}${s.done ? ', done' : ''}`}
+          >
+            <Text style={styles.number}>{i + 1}</Text>
+          </View>
+        </Marker>
+      ))}
       {dropoff && (
         <Marker coordinate={ll(dropoff)} anchor={{ x: 0.5, y: 0.5 }} title="Drop-off">
           <View style={[styles.stop, { backgroundColor: Colors.textPrimary }]}>
@@ -107,6 +120,9 @@ export function DeliveryMapExpoGo({
 }
 
 const styles = StyleSheet.create({
+  numbered: { backgroundColor: Colors.textPrimary },
+  done: { opacity: 0.45 },
+  number: { color: Colors.textInverse, fontSize: 13, fontWeight: '800' },
   stop: {
     width: 30,
     height: 30,

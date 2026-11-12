@@ -185,9 +185,20 @@ export interface DeliveryEvent {
   at: string;
 }
 
+/** A drop-off before the final one on a multi-stop delivery (never its PIN). */
+export interface AdminExtraStop extends AdminStop {
+  status: 'PENDING' | 'DELIVERED' | 'FAILED';
+  doneAt: string | null;
+  failReason: string | null;
+  pinAttempts: number;
+}
+
 export interface AdminDeliveryDetail extends Omit<AdminDelivery, 'pickup' | 'dropoff'> {
   pickup: AdminStop;
+  /** Drop-offs before the final one, in visiting order (empty for a single drop-off). */
+  stops: AdminExtraStop[];
   dropoff: AdminStop;
+  stopsFarePesewas: number;
   notes: string | null;
   durationSeconds: number;
   baseFarePesewas: number;

@@ -25,7 +25,9 @@ import {
   cedis,
   CustomerOrder,
   DeliveryDraft,
+  extraStops,
   isActive,
+  plainStop,
   PACKAGE_LABEL,
   RATING_TAGS,
   STATUS_LABEL,
@@ -92,7 +94,7 @@ export function TrackingScreen({
   }, [load, active]);
 
   useEffect(() => {
-    if (order) void fetchRouteLine(order.pickup, order.dropoff).then(setRoute);
+    if (order) void fetchRouteLine(order.pickup, order.dropoff, extraStops(order)).then(setRoute);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id]);
 
@@ -140,6 +142,7 @@ export function TrackingScreen({
       <View style={styles.mapArea}>
         <DeliveryMap
           pickup={order.status === 'PICKED_UP' ? null : order.pickup}
+          stops={extraStops(order).map((s) => ({ lat: s.lat, lng: s.lng, done: s.status !== 'PENDING' }))}
           dropoff={order.dropoff}
           rider={showRider ? riderPos : null}
           route={route}
@@ -190,6 +193,7 @@ export function TrackingScreen({
               onPress={() =>
                 onRebook({
                   pickup: order.pickup,
+                  stops: extraStops(order).map(plainStop),
                   dropoff: order.dropoff,
                   packageType: order.packageType,
                   fragile: order.fragile,
@@ -236,6 +240,11 @@ function StatusHeader({ order }: { order: CustomerOrder }): React.JSX.Element {
     <View>
       <Text style={styles.code}>Order {order.code}</Text>
       <Text style={styles.status}>{STATUS_LABEL[order.status]}</Text>
+      {extraStops(order).length > 0 && order.status === 'PICKED_UP' && (
+        <Text style={styles.small}>
+          {extraStops(order).filter((s) => s.status !== 'PENDING').length} of {extraStops(order).length + 1} drop-offs done
+        </Text>
+      )}
       {!ended && (
         <View style={styles.progress}>
           {steps.map((s, i) => (
@@ -335,6 +344,8 @@ function RiderCard({
 }
 
 function PinCard({ order }: { order: CustomerOrder }): React.JSX.Element {
+  const stops = extraStops(order);
+  if (stops.length > 0) return <MultiPinCard order={order} />;
   const receiver = order.dropoff.contactName;
   const share = (): void => {
     void Share.share({
@@ -354,6 +365,71 @@ function PinCard({ order }: { order: CustomerOrder }): React.JSX.Element {
         <Ionicons name="share-social-outline" size={18} color={Colors.dispatchGreenLight} />
         <Text style={styles.link}>Send PIN to {receiver}</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+/** Multi-stop: one PIN per receiver, each shared separately. */
+function MultiPinCard({ order }: { order: CustomerOrder }): React.JSX.Element {
+  const rows = [
+    ...extraStops(order).map((s, i) => ({ key: `s${i}`, n: i + 1, stop: s, pin: s.pin, status: s.status, why: s.failReason })),
+    {
+      key: 'final',
+      n: extraStops(order).length + 1,
+      stop: order.dropoff,
+      pin: order.deliveryPin,
+      status: order.status === 'DELIVERED' ? ('DELIVERED' as const) : ('PENDING' as const),
+      why: null,
+    },
+  ];
+  const share = (pin: string): void => {
+    void Share.share({
+      message: `Your GhanaDash delivery ${order.code} is on the way. Give the rider this PIN only when you receive your package: ${pin}.`,
+    });
+  };
+  return (
+    <View style={[styles.card, styles.pinCard]}>
+      <Text style={styles.small}>Delivery PINs · one per receiver</Text>
+      <Text style={styles.body}>
+        Send each receiver their own PIN. They give it to the rider only when their package arrives.
+      </Text>
+      {rows.map((r) => (
+        <View key={r.key} style={styles.pinRow}>
+          <View style={[styles.stopDot, { backgroundColor: Colors.textPrimary }, r.status !== 'PENDING' && { opacity: 0.45 }]}>
+            <Text style={styles.dotNumber}>{r.n}</Text>
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.bodyBold} numberOfLines={1}>
+              {r.stop.contactName}
+            </Text>
+            <Text style={styles.small} numberOfLines={1}>
+              {r.status === 'DELIVERED' ? 'Delivered' : r.status === 'FAILED' ? `Not delivered${r.why ? `: ${r.why}` : ''}` : r.stop.address}
+            </Text>
+          </View>
+          {r.status === 'PENDING' ? (
+            <>
+              <Text style={styles.pinSmall} accessibilityLabel={`PIN ${r.pin.split('').join(' ')}`}>
+                {r.pin}
+              </Text>
+              <TouchableOpacity
+                onPress={() => share(r.pin)}
+                accessibilityRole="button"
+                accessibilityLabel={`Send PIN to ${r.stop.contactName}`}
+                hitSlop={8}
+              >
+                <Ionicons name="share-social-outline" size={20} color={Colors.dispatchGreenLight} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Ionicons
+              name={r.status === 'DELIVERED' ? 'checkmark-circle' : 'alert-circle'}
+              size={22}
+              color={r.status === 'DELIVERED' ? Colors.dispatchGreen : Colors.amberAlert}
+            />
+          )}
+        </View>
+      ))}
+      <Text style={[styles.small, styles.mt]}>Pay {cedis(order.farePesewas)} cash to the rider.</Text>
     </View>
   );
 }
@@ -446,7 +522,25 @@ function Summary({ order }: { order: CustomerOrder }): React.JSX.Element {
       )}
       <Stop icon="cube" color={Colors.dispatchGreen} label="Pickup" s={order.pickup} />
       <View style={styles.connector} />
-      <Stop icon="flag" color={Colors.textPrimary} label="Drop-off" s={order.dropoff} />
+      {extraStops(order).map((s, i) => (
+        <React.Fragment key={i}>
+          <Stop
+            icon="flag"
+            number={i + 1}
+            color={Colors.textPrimary}
+            label={`Drop-off ${i + 1}${s.status === 'DELIVERED' ? ' · delivered' : s.status === 'FAILED' ? ' · not delivered' : ''}`}
+            s={s}
+          />
+          <View style={styles.connector} />
+        </React.Fragment>
+      ))}
+      <Stop
+        icon="flag"
+        number={extraStops(order).length ? extraStops(order).length + 1 : undefined}
+        color={Colors.textPrimary}
+        label={extraStops(order).length ? `Drop-off ${extraStops(order).length + 1} (last)` : 'Drop-off'}
+        s={order.dropoff}
+      />
       <View style={styles.divider} />
       <View style={styles.line}>
         <Text style={styles.small}>
@@ -464,8 +558,10 @@ function Stop({
   color,
   label,
   s,
+  number,
 }: {
   icon: React.ComponentProps<typeof Ionicons>['name'];
+  number?: number;
   color: string;
   label: string;
   s: CustomerOrder['pickup'];
@@ -473,7 +569,7 @@ function Stop({
   return (
     <View style={styles.row}>
       <View style={[styles.stopDot, { backgroundColor: color }]}>
-        <Ionicons name={icon} size={12} color="#FFFFFF" />
+        {number ? <Text style={styles.dotNumber}>{number}</Text> : <Ionicons name={icon} size={12} color="#FFFFFF" />}
       </View>
       <View style={styles.flex}>
         <Text style={styles.small}>{label}</Text>
@@ -487,6 +583,9 @@ function Stop({
 }
 
 const styles = StyleSheet.create({
+  dotNumber: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+  pinRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.md },
+  pinSmall: { ...Typography.h3, color: Colors.textPrimary, letterSpacing: 3 },
   container: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl, gap: Spacing.md, backgroundColor: Colors.background },
   flex: { flex: 1 },

@@ -107,7 +107,8 @@ export const updateCustomerProfile = (fullName: string, email: string | null): P
 
 // ---------- Deliveries ----------
 
-export const getQuote = (pickup: Point, dropoff: Point): Promise<Quote> =>
+/** Price for pickup → any drop-offs on the way (in order) → final drop-off. */
+export const getQuote = (pickup: Point, dropoff: Point, stops: Point[] = []): Promise<Quote> =>
   api(
     '/orders/quote',
     {
@@ -115,6 +116,7 @@ export const getQuote = (pickup: Point, dropoff: Point): Promise<Quote> =>
       body: JSON.stringify({
         pickup: { lat: pickup.lat, lng: pickup.lng },
         dropoff: { lat: dropoff.lat, lng: dropoff.lng },
+        ...(stops.length ? { stops: stops.map((s) => ({ lat: s.lat, lng: s.lng })) } : {}),
       }),
     },
     12000,
@@ -126,10 +128,13 @@ export const createOrder = (
   packagePhotoPath: string | null = null,
 ): Promise<CustomerOrder> => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { packagePhoto, ...fields } = draft;
+  const { packagePhoto, stops, ...fields } = draft;
   return api(
     '/orders',
-    { method: 'POST', body: JSON.stringify({ ...fields, quoteToken, packagePhotoPath }) },
+    {
+      method: 'POST',
+      body: JSON.stringify({ ...fields, ...(stops?.length ? { stops } : {}), quoteToken, packagePhotoPath }),
+    },
     12000,
   );
 };

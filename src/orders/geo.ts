@@ -31,7 +31,8 @@ export interface RoadEstimate {
 const logger = new Logger('RoadDistance');
 
 /**
- * Road distance and time via Mapbox Directions (driving profile, closest to a motorbike).
+ * Road distance and time via Mapbox Directions (driving profile, closest to a motorbike),
+ * along the points in order (pickup, any drop-offs on the way, final drop-off).
  * Falls back to straight-line distance × 1.35 at ~22 km/h so quotes still work offline.
  */
 export async function roadEstimate(
@@ -39,15 +40,19 @@ export async function roadEstimate(
   to: LatLng,
   fetchImpl: typeof fetch = (i, init) => globalThis.fetch(i, init),
   token: string | undefined = process.env.MAPBOX_ACCESS_TOKEN,
+  via: LatLng[] = [],
 ): Promise<RoadEstimate> {
+  const points = [from, ...via, to];
   const fallback = (): RoadEstimate => {
-    const d = Math.round(haversineMeters(from, to) * 1.35);
+    let straight = 0;
+    for (let i = 1; i < points.length; i++) straight += haversineMeters(points[i - 1], points[i]);
+    const d = Math.round(straight * 1.35);
     return { distanceMeters: d, durationSeconds: Math.round(d / (22 / 3.6)), estimated: true };
   };
   if (!token) return fallback();
+  const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   const url =
-    `https://api.mapbox.com/directions/v5/mapbox/driving/` +
-    `${from.lng.toFixed(6)},${from.lat.toFixed(6)};${to.lng.toFixed(6)},${to.lat.toFixed(6)}` +
+    `https://api.mapbox.com/directions/v5/mapbox/driving/${coords}` +
     `?overview=false&access_token=${encodeURIComponent(token)}`;
   try {
     const res = await fetchImpl(url);

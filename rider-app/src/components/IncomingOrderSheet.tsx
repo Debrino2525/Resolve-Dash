@@ -84,10 +84,16 @@ export function IncomingOrderSheet({
               landmark={offer.pickup.landmark}
             />
             <View style={styles.connector} />
+            {(offer.stops ?? []).map((s, i) => (
+              <React.Fragment key={i}>
+                <Stop icon="flag-outline" color={Colors.harborBlue} label={`Drop-off ${i + 1}`} address={s.address} landmark={s.landmark} />
+                <View style={styles.connector} />
+              </React.Fragment>
+            ))}
             <Stop
               icon="flag"
               color={Colors.harborBlue}
-              label={`Drop-off · ${formatDistance(offer.distanceMeters)} trip, ~${formatDuration(offer.durationSeconds)}`}
+              label={`${offer.stops?.length ? `Drop-off ${offer.stops.length + 1} (last)` : 'Drop-off'} · ${formatDistance(offer.distanceMeters)} trip, ~${formatDuration(offer.durationSeconds)}`}
               address={offer.dropoff.address}
               landmark={offer.dropoff.landmark}
             />

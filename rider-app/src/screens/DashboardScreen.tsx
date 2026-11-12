@@ -21,7 +21,7 @@ import { getCurrentCoords, LatLng, useRiderLocation } from '../services/location
 import { useTurnByTurn } from '../services/navigation';
 import { fetchRoadRoute, formatDuration, RoadRoute } from '../services/routing';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
-import { cedis, OrderStop, PACKAGE_LABEL } from '../types/dispatch';
+import { cedis, currentDrop, OrderStop, PACKAGE_LABEL, remainingDrops } from '../types/dispatch';
 import { RiderProfile, SubscriptionDetails } from '../types/subscription';
 import { distanceMeters, formatDistance, navigationUrl } from '../utils/geo';
 import { formatGhanaLocal } from '../utils/phone';
@@ -87,6 +87,8 @@ export function DashboardScreen({
   }, [online, job]);
 
   const stage = job?.status === 'PICKED_UP' ? 'TO_DROPOFF' : 'TO_PICKUP';
+  // Multi-stop: the drop-off the rider is heading to now (the final one for single-drop jobs).
+  const drop = job ? currentDrop(job) : null;
   useEffect(() => {
     if (job && seen?.jobId !== job.id) setSeen({ jobId: job.id, count: job.messageCount });
   }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -106,7 +108,7 @@ export function DashboardScreen({
   }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Road route for the offer or job (rider → pickup → drop-off, or → drop-off once picked up).
-  const routeKey = job ? `${job.id}:${job.status}` : offer ? `offer:${offer.id}` : null;
+  const routeKey = job ? `${job.id}:${job.status}:${drop?.n ?? 0}` : offer ? `offer:${offer.id}` : null;
   useEffect(() => {
     if (!routeKey) {
       setRoute(null);
@@ -116,10 +118,10 @@ export function DashboardScreen({
     if (!origin) return;
     const stops = job
       ? stage === 'TO_DROPOFF'
-        ? [toLatLng(job.dropoff)]
-        : [toLatLng(job.pickup), toLatLng(job.dropoff)]
+        ? remainingDrops(job).map(toLatLng)
+        : [toLatLng(job.pickup), ...remainingDrops(job).map(toLatLng)]
       : offer
-        ? [toLatLng(offer.pickup), toLatLng(offer.dropoff)]
+        ? [toLatLng(offer.pickup), ...(offer.stops ?? []).map(toLatLng), toLatLng(offer.dropoff)]
         : [];
     let cancelled = false;
     void fetchRoadRoute([origin, ...stops]).then((r) => {
@@ -195,7 +197,15 @@ export function DashboardScreen({
   };
 
   const confirmDelivered = async (pin: string): Promise<void> => {
-    if (!job) return;
+    if (!job || !drop) return;
+    if (drop.index !== null) {
+      // A drop-off before the final one: the job carries on to the next.
+      await dispatch.stopDelivered(job.id, drop.index, pin);
+      setPinOpen(false);
+      setNavigating(false);
+      Alert.alert(`Drop-off ${drop.n} done`, `Next: drop-off ${drop.n + 1} of ${drop.total}.`);
+      return;
+    }
     if (lastJob.current) lastJob.current.delivered = true;
     try {
       await dispatch.delivered(job.id, pin);
@@ -206,6 +216,21 @@ export function DashboardScreen({
     setPinOpen(false);
     setNavigating(false);
     Alert.alert('Delivered', `Well done! ${cedis(job.farePesewas)} cash collected.`);
+  };
+
+  /** Multi-stop: nobody to hand over to at this drop-off; record why and move on. */
+  const couldNotDeliver = (): void => {
+    if (!job || !drop || drop.index === null) return;
+    const index = drop.index;
+    const mark = (reason: string): void => {
+      setNavigating(false);
+      void dispatch.stopFailed(job.id, index, reason);
+    };
+    Alert.alert(`Can't deliver to drop-off ${drop.n}?`, 'The customer will see this. Keep the package safe and call them.', [
+      { text: 'Nobody there', onPress: () => mark('Nobody there to receive it') },
+      { text: 'Refused / wrong place', onPress: () => mark('Receiver refused it, or wrong place') },
+      { text: 'Back', style: 'cancel' },
+    ]);
   };
 
   const releaseJob = (): void => {
@@ -227,7 +252,7 @@ export function DashboardScreen({
     );
   };
 
-  const target = job ? toLatLng(stage === 'TO_PICKUP' ? job.pickup : job.dropoff) : null;
+  const target = job ? toLatLng(stage === 'TO_PICKUP' ? job.pickup : drop!.stop) : null;
   const nav = useTurnByTurn(navigating ? target : null, here, navigating, muted);
 
   const startNavigation = (): void => {
@@ -257,10 +282,16 @@ export function DashboardScreen({
   let header: React.ReactNode;
   let body: React.ReactNode;
   if (job) {
-    const stop: OrderStop = stage === 'TO_PICKUP' ? job.pickup : job.dropoff;
+    const stop: OrderStop = stage === 'TO_PICKUP' ? job.pickup : drop!.stop;
     header = (
       <View>
-        <Text style={styles.kicker}>{stage === 'TO_PICKUP' ? 'Head to pickup' : 'Deliver to drop-off'}</Text>
+        <Text style={styles.kicker}>{stage === 'TO_PICKUP'
+            ? drop && drop.total > 1
+              ? `Head to pickup · ${drop.total} drop-offs`
+              : 'Head to pickup'
+            : drop && drop.total > 1
+              ? `Drop-off ${drop.n} of ${drop.total}${drop.index === null ? ' · last' : ''}`
+              : 'Deliver to drop-off'}</Text>
         <Text style={styles.title} numberOfLines={2}>
           {stop.address}
         </Text>
@@ -287,6 +318,11 @@ export function DashboardScreen({
             flex
           />
         </View>
+        {stage === 'TO_DROPOFF' && drop?.index != null && (
+          <TouchableOpacity onPress={couldNotDeliver} style={styles.skipLink} accessibilityRole="button">
+            <Text style={styles.skipText}>Can't deliver here?</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
     body = (
@@ -402,6 +438,12 @@ export function DashboardScreen({
         rider={here}
         pickup={job ? toLatLng(job.pickup) : offer ? toLatLng(offer.pickup) : null}
         dropoff={job ? toLatLng(job.dropoff) : offer ? toLatLng(offer.dropoff) : null}
+        waypoints={
+          job
+            ? (job.stops ?? []).filter((s) => s.status === 'PENDING').map(toLatLng)
+            : (offer?.stops ?? []).map(toLatLng)
+        }
+        firstWaypointNumber={drop?.n ?? 1}
         route={navigating ? (nav.route?.coordinates ?? route?.coordinates) : route?.coordinates}
         follow={online && !job && !offer}
         bottomInset={navigating ? 220 : sheetHeight}
@@ -413,7 +455,7 @@ export function DashboardScreen({
       {navigating && job && (
         <NavigationOverlay
           nav={nav}
-          destinationLabel={stage === 'TO_PICKUP' ? job.pickup.address : job.dropoff.address}
+          destinationLabel={stage === 'TO_PICKUP' ? job.pickup.address : drop!.stop.address}
           muted={muted}
           onToggleMute={() => setMuted((m) => !m)}
           onExit={() => setNavigating(false)}
@@ -554,8 +596,8 @@ export function DashboardScreen({
 
       <PinEntrySheet
         visible={pinOpen && Boolean(job)}
-        receiverName={job?.dropoff.contactName ?? 'the receiver'}
-        farePesewas={job?.farePesewas ?? 0}
+        receiverName={drop?.stop.contactName ?? 'the receiver'}
+        farePesewas={drop && drop.index !== null ? 0 : (job?.farePesewas ?? 0)}
         onSubmit={confirmDelivered}
         onClose={() => setPinOpen(false)}
       />
@@ -613,6 +655,8 @@ function ActionButton({
 }
 
 const styles = StyleSheet.create({
+  skipLink: { alignSelf: 'center', paddingVertical: Spacing.sm, marginTop: Spacing.xs },
+  skipText: { ...Typography.caption, color: Colors.amberLight, fontWeight: '700' },
   container: {
     flex: 1,
     backgroundColor: Colors.background,

@@ -45,7 +45,7 @@ export class OrderController {
   @Throttle({ default: { limit: 30, ttl: throttleTtlMs() } }) // each quote is a Mapbox request
   quote(@CurrentUser() user: AuthUser, @Body() body: unknown): Promise<QuoteResult> {
     const b = parse(quoteSchema, body);
-    return this.orders.quote(user.id, b.pickup, b.dropoff);
+    return this.orders.quote(user.id, b.pickup, b.dropoff, b.stops);
   }
 
   @Post()
@@ -55,6 +55,7 @@ export class OrderController {
     return this.orders.create(user.id, {
       pickup: b.pickup,
       dropoff: b.dropoff,
+      stops: b.stops,
       packageType: b.packageType,
       fragile: b.fragile,
       notes: b.notes,

@@ -17,12 +17,13 @@ import { OrderRepository } from './order.repository';
 import {
   CustomerOrderView,
   DeliveryOrder,
+  ExtraStop,
   OrderStop,
   PackageType,
   RecentPlace,
   RATING_TAGS,
 } from './order.types';
-import { priceTrip, readPricing } from './pricing';
+import { MAX_EXTRA_STOPS, priceTrip, readPricing } from './pricing';
 
 export const QUOTE_TTL_MS = 10 * 60 * 1000;
 export const MAX_ACTIVE_ORDERS = 3;
@@ -33,7 +34,11 @@ export interface QuoteResult {
   durationSeconds: number;
   baseFarePesewas: number;
   distanceFarePesewas: number;
+  /** Charge for drop-offs after the first (0 for a single drop-off). */
+  stopsFarePesewas: number;
   farePesewas: number;
+  /** Number of drop-offs priced, including the final one. */
+  dropoffCount: number;
   estimated: boolean;
   quoteToken: string;
   expiresAt: string;
@@ -43,10 +48,13 @@ interface QuoteClaims {
   sub: string;
   p: [number, number];
   d: [number, number];
+  /** Drop-offs before the final one (absent on quotes from before multi-stop). */
+  s?: [number, number][];
   dm: number;
   ds: number;
   bf: number;
   df: number;
+  sf?: number;
   f: number;
   exp: number;
 }
@@ -54,6 +62,8 @@ interface QuoteClaims {
 export interface CreateOrderInput {
   pickup: OrderStop;
   dropoff: OrderStop;
+  /** Drop-offs before the final one, in visiting order (must match the quote). */
+  stops?: OrderStop[];
   packageType: PackageType;
   fragile: boolean;
   notes: string | null;
@@ -80,25 +90,45 @@ export class OrderService {
     userId: string,
     pickup: LatLng,
     dropoff: LatLng,
+    via: LatLng[] = [],
     now = Date.now(),
   ): Promise<QuoteResult> {
-    if (!isInGhana(pickup) || !isInGhana(dropoff)) {
-      throw new BadRequestException('Pickup and drop-off must both be in Ghana');
+    if (via.length > MAX_EXTRA_STOPS) {
+      throw new BadRequestException(`Up to ${MAX_EXTRA_STOPS + 1} drop-offs per delivery`);
     }
-    if (haversineMeters(pickup, dropoff) < 50) {
-      throw new BadRequestException('Pickup and drop-off are the same place');
+    const route = [pickup, ...via, dropoff];
+    if (!route.every(isInGhana)) {
+      throw new BadRequestException(
+        via.length
+          ? 'Pickup and drop-offs must all be in Ghana'
+          : 'Pickup and drop-off must both be in Ghana',
+      );
     }
-    const road = await roadEstimate(pickup, dropoff);
-    const fare = priceTrip(road.distanceMeters, readPricing());
+    if (route.slice(1).some((p) => haversineMeters(pickup, p) < 50)) {
+      throw new BadRequestException(
+        via.length ? 'A drop-off is at the pickup spot' : 'Pickup and drop-off are the same place',
+      );
+    }
+    for (let i = 1; i < route.length - 1; i++) {
+      if (haversineMeters(route[i], route[i + 1]) < 50) {
+        throw new BadRequestException(
+          'Two drop-offs in a row are the same place. Remove one of them.',
+        );
+      }
+    }
+    const road = await roadEstimate(pickup, dropoff, undefined, undefined, via);
+    const fare = priceTrip(road.distanceMeters, readPricing(), via.length);
     const exp = now + QUOTE_TTL_MS;
     const claims: QuoteClaims = {
       sub: userId,
       p: [round5(pickup.lat), round5(pickup.lng)],
       d: [round5(dropoff.lat), round5(dropoff.lng)],
+      s: via.map((v): [number, number] => [round5(v.lat), round5(v.lng)]),
       dm: road.distanceMeters,
       ds: road.durationSeconds,
       bf: fare.baseFarePesewas,
       df: fare.distanceFarePesewas,
+      sf: fare.stopsFarePesewas,
       f: fare.farePesewas,
       exp,
     };
@@ -106,6 +136,7 @@ export class OrderService {
       distanceMeters: road.distanceMeters,
       durationSeconds: road.durationSeconds,
       ...fare,
+      dropoffCount: via.length + 1,
       estimated: road.estimated,
       quoteToken: this.quotes.sign(claims),
       expiresAt: new Date(exp).toISOString(),
@@ -123,7 +154,17 @@ export class OrderService {
     const q = this.quotes.verify<QuoteClaims>(input.quoteToken);
     const same = (a: [number, number], b: OrderStop): boolean =>
       a[0] === round5(b.lat) && a[1] === round5(b.lng);
-    if (!q || q.sub !== userId || !same(q.p, input.pickup) || !same(q.d, input.dropoff)) {
+    const stops = input.stops ?? [];
+    const quotedStops = q?.s ?? [];
+    const sameStops =
+      quotedStops.length === stops.length && quotedStops.every((s, i) => same(s, stops[i]));
+    if (
+      !q ||
+      q.sub !== userId ||
+      !same(q.p, input.pickup) ||
+      !same(q.d, input.dropoff) ||
+      !sameStops
+    ) {
       throw new BadRequestException(
         'This price quote does not match your trip. Please get a new quote.',
       );
@@ -149,6 +190,14 @@ export class OrderService {
           customerId: userId,
           pickup: input.pickup,
           dropoff: input.dropoff,
+          extraStops: stops.map((s): ExtraStop => ({
+            ...s,
+            pin: newPin(),
+            pinAttempts: 0,
+            status: 'PENDING',
+            doneAt: null,
+            failReason: null,
+          })),
           packageType: input.packageType,
           fragile: input.fragile,
           notes: input.notes,
@@ -156,8 +205,9 @@ export class OrderService {
           durationSeconds: q.ds,
           baseFarePesewas: q.bf,
           distanceFarePesewas: q.df,
+          stopsFarePesewas: q.sf ?? 0,
           farePesewas: q.f,
-          deliveryPin: crypto.randomInt(0, 10_000).toString().padStart(4, '0'),
+          deliveryPin: newPin(),
           packagePhotoPath: photo,
         });
       } catch (err) {
@@ -185,7 +235,7 @@ export class OrderService {
     const out: RecentPlace[] = [];
     for (const o of orders) {
       // Drop-off first: it is the stop people most often send to again.
-      for (const s of [o.dropoff, o.pickup]) {
+      for (const s of [o.dropoff, ...o.extraStops, o.pickup]) {
         if (out.some((p) => haversineMeters(p, s) < 40)) continue;
         out.push({
           lat: s.lat,
@@ -282,7 +332,9 @@ export class OrderService {
 
   private async toView(order: DeliveryOrder, withRider = true): Promise<CustomerOrderView> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { pinAttempts, customerId, packagePhotoPath, ...rest } = order;
+    const { pinAttempts, customerId, packagePhotoPath, extraStops, ...rest } = order;
+
+    const stops = extraStops.map(({ pinAttempts: _tries, ...s }, index) => ({ ...s, index }));
     const showRider =
       withRider && order.riderId && ['ASSIGNED', 'PICKED_UP', 'DELIVERED'].includes(order.status);
     const rider = showRider ? await this.orders.assignedRider(order.riderId as string) : null;
@@ -290,7 +342,14 @@ export class OrderService {
     if (rider && order.status === 'DELIVERED') rider.location = null;
     const messageCount = order.riderId ? await this.orders.messageCount(order.id) : 0;
     const call = this.calls?.summaryFor(order.id, 'CUSTOMER', order.status) ?? null;
-    return { ...rest, rider, hasPackagePhoto: Boolean(packagePhotoPath), messageCount, call };
+    return {
+      ...rest,
+      stops,
+      rider,
+      hasPackagePhoto: Boolean(packagePhotoPath),
+      messageCount,
+      call,
+    };
   }
 }
 
@@ -299,6 +358,10 @@ export function isOwnPackagePhotoPath(userId: string, path: string): boolean {
   return new RegExp(
     `^${userId}/package/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$`,
   ).test(path);
+}
+
+function newPin(): string {
+  return crypto.randomInt(0, 10_000).toString().padStart(4, '0');
 }
 
 export function generateCode(): string {

@@ -8,14 +8,25 @@ describe('pricing', () => {
   const rates = readPricing({});
 
   it('defaults to the design rates: GH₵18.00 base + GH₵1.25/km', () => {
-    expect(rates).toEqual({ baseFarePesewas: 1800, perKmPesewas: 125 });
+    expect(rates).toEqual({ baseFarePesewas: 1800, perKmPesewas: 125, perStopPesewas: 500 });
   });
 
   it('prices the design example (5.2 km) at GH₵24.50', () => {
     expect(priceTrip(5200, rates)).toEqual({
       baseFarePesewas: 1800,
       distanceFarePesewas: 650,
+      stopsFarePesewas: 0,
       farePesewas: 2450,
+    });
+  });
+
+  it('charges the base once, the whole route by km, and GH₵5 per extra drop-off', () => {
+    // 9 km route, 3 drop-offs: 18.00 + 11.25 + 2 × 5.00 = GH₵39.25
+    expect(priceTrip(9000, rates, 2)).toEqual({
+      baseFarePesewas: 1800,
+      distanceFarePesewas: 1125,
+      stopsFarePesewas: 1000,
+      farePesewas: 3925,
     });
   });
 
@@ -25,10 +36,13 @@ describe('pricing', () => {
   });
 
   it('reads overrides from the environment', () => {
-    expect(readPricing({ FARE_BASE_PESEWAS: '2000', FARE_PER_KM_PESEWAS: '150' })).toEqual({
-      baseFarePesewas: 2000,
-      perKmPesewas: 150,
-    });
+    expect(
+      readPricing({
+        FARE_BASE_PESEWAS: '2000',
+        FARE_PER_KM_PESEWAS: '150',
+        FARE_PER_STOP_PESEWAS: '300',
+      }),
+    ).toEqual({ baseFarePesewas: 2000, perKmPesewas: 150, perStopPesewas: 300 });
     expect(readPricing({ FARE_BASE_PESEWAS: 'abc' }).baseFarePesewas).toBe(1800);
   });
 });

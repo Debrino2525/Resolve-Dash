@@ -373,6 +373,7 @@ table.compact th, table.compact td { padding: 10px 20px; }
 }
 .stop-p, .lg-p { background: var(--amber); color: #1a1200; }
 .stop-d, .lg-d { background: var(--red); }
+.stop-1, .stop-2, .stop-3 { background: #3B82F6; color: #fff; }
 .ext { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-text); text-decoration: none; font-weight: 600; margin-top: 4px; }
 .ext .ico { width: 13px; height: 13px; }
 .minis { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 10px; }

@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Put,
@@ -16,7 +17,7 @@ import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { throttleTtlMs } from '../common/throttle.config';
-import { firstIssue, pinSchema, presenceSchema } from './order.schemas';
+import { firstIssue, pinSchema, presenceSchema, stopFailedSchema } from './order.schemas';
 import { DispatchState, RiderDispatchService } from './rider-dispatch.service';
 
 /** Rider side of live dispatch. */
@@ -76,6 +77,35 @@ export class RiderDispatchController {
     const r = pinSchema.safeParse(body ?? {});
     if (!r.success) throw new BadRequestException(firstIssue(r.error));
     return this.dispatch.delivered(user.id, id, r.data.pin);
+  }
+
+  /** Multi-stop: hand over at a drop-off before the final one, with that stop's PIN. */
+  @Post('jobs/:id/stops/:index/delivered')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: throttleTtlMs() } })
+  stopDelivered(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body() body: unknown,
+  ): Promise<DispatchState> {
+    const r = pinSchema.safeParse(body ?? {});
+    if (!r.success) throw new BadRequestException(firstIssue(r.error));
+    return this.dispatch.stopDelivered(user.id, id, index, r.data.pin);
+  }
+
+  /** Multi-stop: couldn't hand over at this drop-off; record why and carry on. */
+  @Post('jobs/:id/stops/:index/failed')
+  @HttpCode(HttpStatus.OK)
+  stopFailed(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body() body: unknown,
+  ): Promise<DispatchState> {
+    const r = stopFailedSchema.safeParse(body ?? {});
+    if (!r.success) throw new BadRequestException(firstIssue(r.error));
+    return this.dispatch.stopFailed(user.id, id, index, r.data.reason);
   }
 
   @Post('jobs/:id/release')

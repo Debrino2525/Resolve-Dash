@@ -40,6 +40,7 @@ function order(over: Partial<DeliveryOrder> = {}): DeliveryOrder {
     status: 'PICKED_UP',
     pickup: PICKUP,
     dropoff: DROPOFF,
+    extraStops: [],
     packageType: 'SMALL_PARCEL',
     fragile: false,
     notes: null,
@@ -47,6 +48,7 @@ function order(over: Partial<DeliveryOrder> = {}): DeliveryOrder {
     durationSeconds: 600,
     baseFarePesewas: 1800,
     distanceFarePesewas: 650,
+    stopsFarePesewas: 0,
     farePesewas: 2450,
     paymentMethod: 'CASH',
     deliveryPin: '8309',
@@ -183,6 +185,52 @@ describe('OrderService quotes', () => {
     ).rejects.toThrow('expired');
   });
 
+  it('prices a multi-stop route along every drop-off, in order', async () => {
+    const via = stop(5.6, -0.17);
+    const q = await service.quote(USER, PICKUP, DROPOFF, [via]);
+    const url = (globalThis.fetch as jest.Mock).mock.calls[0][0] as string;
+    expect(url).toContain('-0.182000,5.556000;-0.170000,5.600000;-0.155000,5.635000');
+    // 5.2 km road + one extra drop-off: 18.00 + 6.50 + 5.00
+    expect(q).toMatchObject({ stopsFarePesewas: 500, farePesewas: 2950, dropoffCount: 2 });
+  });
+
+  it('refuses more than 4 drop-offs and repeated drop-offs', async () => {
+    const a = stop(5.6, -0.17);
+    await expect(
+      service.quote(USER, PICKUP, DROPOFF, [
+        a,
+        stop(5.61, -0.17),
+        stop(5.62, -0.17),
+        stop(5.63, -0.17),
+      ]),
+    ).rejects.toThrow('Up to 4');
+    await expect(service.quote(USER, PICKUP, DROPOFF, [a, a])).rejects.toThrow('same place');
+  });
+
+  it('books the drop-offs with their own PINs, and rejects a changed stop list', async () => {
+    const via = stop(5.6, -0.17);
+    const q = await service.quote(USER, PICKUP, DROPOFF, [via]);
+    const base = {
+      pickup: PICKUP,
+      dropoff: DROPOFF,
+      packageType: 'FOOD' as const,
+      fragile: false,
+      notes: null,
+      quoteToken: q.quoteToken,
+    };
+    await expect(service.create(USER, base)).rejects.toThrow('does not match');
+    const created = await service.create(USER, { ...base, stops: [via] });
+    const inserted = orders.insert.mock.calls[0][0];
+    expect(inserted.stopsFarePesewas).toBe(500);
+    expect(inserted.farePesewas).toBe(2950);
+    expect(inserted.extraStops).toHaveLength(1);
+    expect(inserted.extraStops[0]).toMatchObject({ status: 'PENDING', pinAttempts: 0 });
+    expect(inserted.extraStops[0].pin).toMatch(/^\d{4}$/);
+    // The customer sees each stop's PIN to give the receiver.
+    expect(created.stops[0]).toMatchObject({ index: 0, pin: inserted.extraStops[0].pin });
+    expect(created.stops[0]).not.toHaveProperty('pinAttempts');
+  });
+
   it('limits active deliveries per customer', async () => {
     orders.countActiveForCustomer.mockResolvedValue(3);
     const q = await service.quote(USER, PICKUP, DROPOFF);
@@ -293,6 +341,62 @@ describe('RiderDispatchService', () => {
       await expect(service.delivered(RIDER, ORDER, '8309')).rejects.toThrow('not found');
       orders.lockById.mockResolvedValue(order({ status: 'ASSIGNED' }));
       await expect(service.delivered(RIDER, ORDER, '8309')).rejects.toThrow('pickup');
+    });
+  });
+
+  describe('multi-stop drop-offs', () => {
+    const pending = {
+      ...stop(5.6, -0.17),
+      pin: '4521',
+      pinAttempts: 0,
+      status: 'PENDING' as const,
+      doneAt: null,
+      failReason: null,
+    };
+    const savedStops = (): { status: string; pinAttempts: number; failReason: string | null }[] => {
+      const call = client.query.mock.calls.find((c) => String(c[0]).includes('extra_stops'));
+      return JSON.parse(call?.[1][1] as string);
+    };
+
+    it('will not finish the final drop-off while others are pending', async () => {
+      orders.lockById.mockResolvedValue(order({ extraStops: [pending] }));
+      await expect(service.delivered(RIDER, ORDER, '8309')).rejects.toThrow('1 left');
+    });
+
+    it("completes a drop-off with that stop's PIN", async () => {
+      orders.lockById.mockResolvedValue(order({ extraStops: [pending] }));
+      await service.stopDelivered(RIDER, ORDER, 0, '4521');
+      expect(savedStops()[0].status).toBe('DELIVERED');
+    });
+
+    it('counts wrong PINs per drop-off', async () => {
+      orders.lockById.mockResolvedValue(order({ extraStops: [pending] }));
+      await expect(service.stopDelivered(RIDER, ORDER, 0, '8309')).rejects.toThrow(
+        '4 attempts left',
+      );
+      expect(savedStops()[0]).toMatchObject({ status: 'PENDING', pinAttempts: 1 });
+    });
+
+    it('records a drop-off that could not be delivered, then allows the final one', async () => {
+      orders.lockById.mockResolvedValue(order({ extraStops: [pending] }));
+      await service.stopFailed(RIDER, ORDER, 0, 'Nobody at the gate');
+      expect(savedStops()[0]).toMatchObject({ status: 'FAILED', failReason: 'Nobody at the gate' });
+      orders.lockById.mockResolvedValue(order({ extraStops: [{ ...pending, status: 'FAILED' }] }));
+      await service.delivered(RIDER, ORDER, '8309');
+      expect(client.query).toHaveBeenCalledWith(expect.stringContaining("status = 'DELIVERED'"), [
+        ORDER,
+      ]);
+    });
+
+    it('refuses unknown or finished drop-offs and jobs not picked up', async () => {
+      orders.lockById.mockResolvedValue(order({ extraStops: [pending] }));
+      await expect(service.stopDelivered(RIDER, ORDER, 3, '4521')).rejects.toThrow('not found');
+      orders.lockById.mockResolvedValue(
+        order({ extraStops: [{ ...pending, status: 'DELIVERED' }] }),
+      );
+      await expect(service.stopDelivered(RIDER, ORDER, 0, '4521')).rejects.toThrow('already done');
+      orders.lockById.mockResolvedValue(order({ status: 'ASSIGNED', extraStops: [pending] }));
+      await expect(service.stopFailed(RIDER, ORDER, 0, 'Closed')).rejects.toThrow('pickup');
     });
   });
 

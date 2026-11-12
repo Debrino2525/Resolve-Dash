@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
-import { AssignedRider, DeliveryOrder, OrderStatus, OrderStop, PackageType } from './order.types';
+import {
+  AssignedRider,
+  DeliveryOrder,
+  ExtraStop,
+  OrderStatus,
+  OrderStop,
+  PackageType,
+} from './order.types';
 
 interface OrderRow {
   id: string;
@@ -23,6 +30,7 @@ interface OrderRow {
   dropoff_gps_code: string | null;
   receiver_name: string;
   receiver_phone: string;
+  extra_stops: unknown;
   package_type: PackageType;
   fragile: boolean;
   notes: string | null;
@@ -30,6 +38,7 @@ interface OrderRow {
   duration_s: number;
   base_fare_pesewas: number;
   distance_fare_pesewas: number;
+  stops_fare_pesewas: number | null;
   fare_pesewas: number;
   payment_method: 'CASH';
   delivery_pin: string;
@@ -48,6 +57,27 @@ interface OrderRow {
 }
 
 const iso = (d: Date | null): string | null => (d ? new Date(d).toISOString() : null);
+
+/** extra_stops JSONB → typed stops (tolerates missing fields; never trusts the shape blindly). */
+export function parseExtraStops(raw: unknown): ExtraStop[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+    .map((s) => ({
+      lat: Number(s.lat),
+      lng: Number(s.lng),
+      address: String(s.address ?? ''),
+      landmark: typeof s.landmark === 'string' ? s.landmark : null,
+      gpsCode: typeof s.gpsCode === 'string' ? s.gpsCode : null,
+      contactName: String(s.contactName ?? ''),
+      contactPhone: String(s.contactPhone ?? ''),
+      pin: String(s.pin ?? ''),
+      pinAttempts: Number(s.pinAttempts ?? 0),
+      status: s.status === 'DELIVERED' || s.status === 'FAILED' ? s.status : 'PENDING',
+      doneAt: typeof s.doneAt === 'string' ? s.doneAt : null,
+      failReason: typeof s.failReason === 'string' ? s.failReason : null,
+    }));
+}
 
 export function mapOrder(r: OrderRow): DeliveryOrder {
   return {
@@ -74,6 +104,7 @@ export function mapOrder(r: OrderRow): DeliveryOrder {
       contactName: r.receiver_name,
       contactPhone: r.receiver_phone,
     },
+    extraStops: parseExtraStops(r.extra_stops),
     packageType: r.package_type,
     fragile: r.fragile,
     notes: r.notes,
@@ -81,6 +112,7 @@ export function mapOrder(r: OrderRow): DeliveryOrder {
     durationSeconds: r.duration_s,
     baseFarePesewas: r.base_fare_pesewas,
     distanceFarePesewas: r.distance_fare_pesewas,
+    stopsFarePesewas: r.stops_fare_pesewas ?? 0,
     farePesewas: r.fare_pesewas,
     paymentMethod: r.payment_method,
     deliveryPin: r.delivery_pin,
@@ -104,6 +136,7 @@ export interface NewOrder {
   customerId: string;
   pickup: OrderStop;
   dropoff: OrderStop;
+  extraStops: ExtraStop[];
   packageType: PackageType;
   fragile: boolean;
   notes: string | null;
@@ -111,6 +144,7 @@ export interface NewOrder {
   durationSeconds: number;
   baseFarePesewas: number;
   distanceFarePesewas: number;
+  stopsFarePesewas: number;
   farePesewas: number;
   deliveryPin: string;
   packagePhotoPath: string | null;
@@ -127,8 +161,9 @@ export class OrderRepository {
          pickup_lat, pickup_lng, pickup_address, pickup_landmark, pickup_gps_code, pickup_contact_name, pickup_contact_phone,
          dropoff_lat, dropoff_lng, dropoff_address, dropoff_landmark, dropoff_gps_code, receiver_name, receiver_phone,
          package_type, fragile, notes, distance_m, duration_s,
-         base_fare_pesewas, distance_fare_pesewas, fare_pesewas, delivery_pin, package_photo_path
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+         base_fare_pesewas, distance_fare_pesewas, fare_pesewas, delivery_pin, package_photo_path,
+         extra_stops, stops_fare_pesewas
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27::jsonb,$28)
        RETURNING *`,
       [
         o.code,
@@ -157,6 +192,8 @@ export class OrderRepository {
         o.farePesewas,
         o.deliveryPin,
         o.packagePhotoPath,
+        JSON.stringify(o.extraStops),
+        o.stopsFarePesewas,
       ],
     );
     return mapOrder(res.rows[0]);

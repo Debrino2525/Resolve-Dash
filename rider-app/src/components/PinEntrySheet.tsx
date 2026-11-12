@@ -62,12 +62,14 @@ export function PinEntrySheet({
       <Pressable style={styles.backdrop} onPress={busy ? undefined : onClose} />
       <KeyboardAvoidingView behavior="padding">
         <View style={styles.sheet}>
-          <View style={styles.cash}>
-            <Ionicons name="cash" size={22} color={Colors.dispatchGreen} />
-            <Text style={styles.cashText}>
-              Collect <Text style={styles.cashAmount}>{cedis(farePesewas)}</Text> in cash first
-            </Text>
-          </View>
+          {farePesewas > 0 && (
+            <View style={styles.cash}>
+              <Ionicons name="cash" size={22} color={Colors.dispatchGreen} />
+              <Text style={styles.cashText}>
+                Collect <Text style={styles.cashAmount}>{cedis(farePesewas)}</Text> in cash first
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.title}>Enter delivery PIN</Text>
           <Text style={styles.sub}>Ask {receiverName} for the 4-digit PIN from the GhanaDash app.</Text>

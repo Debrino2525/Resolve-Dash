@@ -990,7 +990,13 @@
       openDrawer(key,
         drawerHead('Delivery', '<span class="mono-strong">' + esc(d.code) + '</span>', '<div class="drawer-badges">' + mapBadge(DSTATUS, d.status) + '</div>') +
         '<section class="drawer-sec">' + facts(rows) + '</section>' +
-        '<section class="drawer-sec"><h3>Route</h3><div class="stops">' + stopBlock('p', 'Pickup', d.pickup) + stopBlock('d', 'Drop-off', d.dropoff) + '</div></section>' +
+        '<section class="drawer-sec"><h3>Route' + ((d.stops || []).length ? ' <span class="muted">(' + (d.stops.length + 1) + ' drop-offs)</span>' : '') + '</h3><div class="stops">' + stopBlock('p', 'Pickup', d.pickup) +
+          (d.stops || []).map(function (s, i) {
+            var state = s.status === 'DELIVERED' ? badge('green', 'Delivered') : s.status === 'FAILED' ? badge('red', 'Not delivered') : badge('amber', 'Pending');
+            return stopBlock(String(i + 1), 'Drop-off ' + (i + 1), s) +
+              '<div class="sub" style="margin:-6px 0 10px 36px">' + state + (s.failReason ? ' <span class="muted small">' + esc(s.failReason) + '</span>' : '') + (s.pinAttempts ? ' <span class="muted small">· ' + esc(s.pinAttempts + ' wrong PIN' + (s.pinAttempts === 1 ? '' : 's')) + '</span>' : '') + '</div>';
+          }).join('') +
+          stopBlock('d', (d.stops || []).length ? 'Final drop-off' : 'Drop-off', d.dropoff) + '</div></section>' +
         '<section class="drawer-sec flush"><h3>Timeline</h3>' + deliveryTimeline(d.timeline) + '</section>' +
         '<section class="drawer-sec flush"><h3>Dispatch offers <span class="muted">(' + d.offers.length + ')</span></h3>' +
           (d.offers.length ? '<div class="table-wrap"><table class="compact"><thead><tr><th>Rider</th><th>Distance</th><th>Result</th><th>Offered</th></tr></thead><tbody>' +

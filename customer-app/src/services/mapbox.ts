@@ -82,9 +82,13 @@ export async function reverseGeocode(p: Point): Promise<string> {
 }
 
 /** Road geometry between two points for drawing on the map (null if unavailable). */
-export async function fetchRouteLine(a: Point, b: Point): Promise<{ latitude: number; longitude: number }[] | null> {
+export async function fetchRouteLine(
+  a: Point,
+  b: Point,
+  via: Point[] = [],
+): Promise<{ latitude: number; longitude: number }[] | null> {
   if (!TOKEN) return null;
-  const coords = `${a.lng.toFixed(6)},${a.lat.toFixed(6)};${b.lng.toFixed(6)},${b.lat.toFixed(6)}`;
+  const coords = [a, ...via, b].map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   try {
     const res = await fetch(
       `https://api.mapbox.com/directions/v5/mapbox/driving/${coords}?overview=full&geometries=polyline6&access_token=${encodeURIComponent(TOKEN)}`,

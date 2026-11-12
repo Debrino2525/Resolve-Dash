@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Camera, LineLayer, LocationPuck, MapView, MarkerView, ShapeSource, StyleImport } from '@rnmapbox/maps';
 import React, { useEffect, useRef } from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { DEFAULT_CENTRE } from '../services/location';
 import { Colors } from '../theme/theme';
 import { Point } from '../types/orders';
@@ -10,6 +10,8 @@ import { CLEAN_BASEMAP, lngLat, STANDARD_STYLE, zoomForDelta } from './mapSetup'
 export interface DeliveryMapProps {
   pickup?: Point | null;
   dropoff?: Point | null;
+  /** Drop-offs before the final one, numbered 1, 2, 3 (done ones fade). */
+  stops?: (Point & { done?: boolean })[];
   rider?: (Point & { heading?: number | null }) | null;
   /** Approximate positions of nearby online riders (Home screen). */
   nearby?: Point[];
@@ -26,6 +28,7 @@ export interface DeliveryMapProps {
 export function DeliveryMapMapbox({
   pickup,
   dropoff,
+  stops = [],
   rider,
   nearby = [],
   center,
@@ -35,7 +38,7 @@ export function DeliveryMapMapbox({
   showsUser = true,
 }: DeliveryMapProps): React.JSX.Element {
   const camera = useRef<Camera>(null);
-  const focus = [pickup, dropoff, rider].filter((p): p is Point => Boolean(p));
+  const focus = [pickup, ...stops.filter((s) => !s.done), dropoff, rider].filter((p): p is Point => Boolean(p));
   const fitKey = focus.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|');
   const start = center ?? pickup ?? DEFAULT_CENTRE;
 
@@ -101,6 +104,16 @@ export function DeliveryMapMapbox({
           </View>
         </MarkerView>
       )}
+      {stops.map((s, i) => (
+        <MarkerView key={`s${i}`} coordinate={lngLat(s)} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+          <View
+            style={[styles.stop, styles.numbered, s.done && styles.done]}
+            accessibilityLabel={`Drop-off ${i + 1}${s.done ? ', done' : ''}`}
+          >
+            <Text style={styles.number}>{i + 1}</Text>
+          </View>
+        </MarkerView>
+      ))}
       {dropoff && (
         <MarkerView coordinate={lngLat(dropoff)} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
           <View style={[styles.stop, { backgroundColor: Colors.textPrimary }]} accessibilityLabel="Drop-off">
@@ -120,6 +133,9 @@ export function DeliveryMapMapbox({
 }
 
 const styles = StyleSheet.create({
+  numbered: { backgroundColor: Colors.textPrimary },
+  done: { opacity: 0.45 },
+  number: { color: Colors.textInverse, fontSize: 13, fontWeight: '800' },
   stop: {
     width: 30,
     height: 30,

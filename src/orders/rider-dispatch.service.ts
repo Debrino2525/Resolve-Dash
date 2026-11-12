@@ -9,12 +9,13 @@ import {
   Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { SubscriptionService } from '../subscriptions/subscription.service';
 import { DispatchService } from './dispatch.service';
 import { OrderCallService } from './order-call.service';
-import { OrderRepository } from './order.repository';
-import { DeliveryOrder, PackageType, RiderJobView, RiderOfferView } from './order.types';
+import { OrderRepository, parseExtraStops } from './order.repository';
+import { DeliveryOrder, ExtraStop, PackageType, RiderJobView, RiderOfferView } from './order.types';
 
 export const MAX_PIN_ATTEMPTS = 5;
 
@@ -47,6 +48,7 @@ interface OfferRow {
   dropoff_lng: number;
   dropoff_address: string;
   dropoff_landmark: string | null;
+  extra_stops: unknown;
   package_type: PackageType;
   fragile: boolean;
   distance_m: number;
@@ -206,6 +208,12 @@ export class RiderDispatchService {
       if (!order || order.riderId !== riderId) throw new NotFoundException('Job not found');
       if (order.status !== 'PICKED_UP')
         throw new ConflictException('Confirm pickup before delivering.');
+      const left = order.extraStops.filter((s) => s.status === 'PENDING').length;
+      if (left > 0) {
+        throw new ConflictException(
+          `Finish the other drop-off${left === 1 ? '' : 's'} first (${left} left), then the final one.`,
+        );
+      }
       if (order.pinAttempts >= MAX_PIN_ATTEMPTS) {
         throw new HttpException(
           'Too many wrong PINs. Call the customer, or GhanaDash support, to complete this delivery.',
@@ -238,6 +246,101 @@ export class RiderDispatchService {
     return this.state(riderId);
   }
 
+  /**
+   * Multi-stop: hands over at one of the drop-offs before the final one, with that stop's PIN.
+   * The order stays PICKED_UP until the final drop-off is delivered.
+   */
+  async stopDelivered(
+    riderId: string,
+    orderId: string,
+    index: number,
+    pin: string,
+  ): Promise<DispatchState> {
+    const outcome = await this.db.withTransaction(async (client) => {
+      const order = await this.lockStop(client, riderId, orderId, index);
+      const stop = order.extraStops[index];
+      if (stop.pinAttempts >= MAX_PIN_ATTEMPTS) {
+        throw new HttpException(
+          'Too many wrong PINs for this drop-off. Call the customer, or mark it as not delivered.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      const ok =
+        /^\d{4}$/.test(pin) &&
+        stop.pin.length === 4 &&
+        crypto.timingSafeEqual(Buffer.from(pin), Buffer.from(stop.pin));
+      const next: ExtraStop = ok
+        ? { ...stop, status: 'DELIVERED', doneAt: new Date().toISOString() }
+        : { ...stop, pinAttempts: stop.pinAttempts + 1 };
+      await this.saveStops(client, orderId, order.extraStops, index, next);
+      return { ok, left: MAX_PIN_ATTEMPTS - stop.pinAttempts - 1 };
+    });
+    if (!outcome.ok) {
+      throw new BadRequestException(
+        outcome.left > 0
+          ? `Wrong PIN. ${outcome.left} attempt${outcome.left === 1 ? '' : 's'} left.`
+          : 'Wrong PIN. No attempts left: call the customer, or mark this drop-off as not delivered.',
+      );
+    }
+    return this.state(riderId);
+  }
+
+  /**
+   * Multi-stop: the rider could not hand over at a drop-off (nobody there, wrong address...).
+   * It is recorded with the reason so the customer sees it, and the rider carries on.
+   */
+  async stopFailed(
+    riderId: string,
+    orderId: string,
+    index: number,
+    reason: string,
+  ): Promise<DispatchState> {
+    await this.db.withTransaction(async (client) => {
+      const order = await this.lockStop(client, riderId, orderId, index);
+      const stop = order.extraStops[index];
+      await this.saveStops(client, orderId, order.extraStops, index, {
+        ...stop,
+        status: 'FAILED',
+        doneAt: new Date().toISOString(),
+        failReason: reason.trim().slice(0, 255),
+      });
+    });
+    return this.state(riderId);
+  }
+
+  private async lockStop(
+    client: PoolClient,
+    riderId: string,
+    orderId: string,
+    index: number,
+  ): Promise<DeliveryOrder> {
+    const order = await this.orders.lockById(client, orderId);
+    if (!order || order.riderId !== riderId) throw new NotFoundException('Job not found');
+    if (order.status !== 'PICKED_UP') {
+      throw new ConflictException('Confirm pickup before delivering.');
+    }
+    const stop = order.extraStops[index];
+    if (!stop) throw new NotFoundException('Drop-off not found');
+    if (stop.status !== 'PENDING') {
+      throw new ConflictException('This drop-off is already done.');
+    }
+    return order;
+  }
+
+  private async saveStops(
+    client: PoolClient,
+    orderId: string,
+    stops: ExtraStop[],
+    index: number,
+    next: ExtraStop,
+  ): Promise<void> {
+    const all = stops.map((s, i) => (i === index ? next : s));
+    await client.query(`UPDATE delivery_orders SET extra_stops = $2::jsonb WHERE id = $1`, [
+      orderId,
+      JSON.stringify(all),
+    ]);
+  }
+
   /** Rider can't do an accepted job (before pickup): it goes back to dispatch for someone else. */
   async release(riderId: string, orderId: string): Promise<DispatchState> {
     const res = await this.db.query(
@@ -259,7 +362,7 @@ export class RiderDispatchService {
       `SELECT f.id, f.order_id, f.expires_at, f.distance_to_pickup_m,
               o.pickup_lat, o.pickup_lng, o.pickup_address, o.pickup_landmark,
               o.dropoff_lat, o.dropoff_lng, o.dropoff_address, o.dropoff_landmark,
-              o.package_type, o.fragile, o.distance_m, o.duration_s, o.fare_pesewas,
+              o.extra_stops, o.package_type, o.fragile, o.distance_m, o.duration_s, o.fare_pesewas,
               (o.package_photo_path IS NOT NULL) AS has_package_photo
        FROM order_offers f JOIN delivery_orders o ON o.id = f.order_id
        WHERE f.rider_id = $1 AND f.status = 'OFFERED' AND f.expires_at > NOW() AND o.status = 'SEARCHING'
@@ -279,6 +382,12 @@ export class RiderDispatchService {
         address: r.pickup_address,
         landmark: r.pickup_landmark,
       },
+      stops: parseExtraStops(r.extra_stops).map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+        address: s.address,
+        landmark: s.landmark,
+      })),
       dropoff: {
         lat: Number(r.dropoff_lat),
         lng: Number(r.dropoff_lng),
@@ -301,6 +410,11 @@ export class RiderDispatchService {
       code: o.code,
       status: o.status,
       pickup: o.pickup,
+
+      stops: o.extraStops.map(({ pin: _pin, pinAttempts: _tries, ...s }, index) => ({
+        ...s,
+        index,
+      })),
       dropoff: o.dropoff,
       packageType: o.packageType,
       fragile: o.fragile,
