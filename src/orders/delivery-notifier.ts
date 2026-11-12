@@ -30,7 +30,7 @@ export class DeliveryNotifier {
       title: `New delivery · ${cedis(o.farePesewas)}`,
       body: `Pickup ${km(o.toPickupMeters)} away: ${short(o.pickupAddress)}. Open to accept.`,
       channel: 'offers',
-      sound: 'new-order.wav',
+      sound: 'new_order.wav',
       ttl: ttlSeconds,
       data: { type: 'offer', orderId: o.orderId },
     });

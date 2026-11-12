@@ -34,7 +34,7 @@ async function createChannels(): Promise<void> {
       name: 'New orders',
       description: 'Rings when a delivery is offered to you',
       importance: AndroidImportance.MAX,
-      sound: 'new-order.wav',
+      sound: 'new_order.wav',
       vibrationPattern: [0, 500, 400, 500, 1200],
       lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
       bypassDnd: true,

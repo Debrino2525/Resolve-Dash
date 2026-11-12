@@ -2,7 +2,7 @@ import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useEffect } from 'react';
 import { Vibration } from 'react-native';
 
-const RINGTONE = require('../../assets/sounds/new-order.wav');
+const RINGTONE = require('../../assets/sounds/new_order.wav');
 /** Buzz-pause pattern, repeated, so a rider feels it in a pocket or on a handlebar mount. */
 const VIBRATION = [0, 500, 400, 500, 1200];
 
