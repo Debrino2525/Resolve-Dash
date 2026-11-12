@@ -304,8 +304,20 @@ function RiderCard({
           <Text style={styles.bodyBold}>{r.fullName}</Text>
           <Text style={styles.small}>
             {r.rating ? `★ ${r.rating.toFixed(1)} · ` : ''}
-            {r.completedTrips} deliveries{r.plate ? ` · ${r.plate}` : ''}
+            {r.completedTrips} deliveries
           </Text>
+          {r.plate ? (
+            <View
+              style={styles.plate}
+              accessible
+              accessibilityLabel={`Motorbike number ${r.plate.split('').join(' ')}`}
+            >
+              <MaterialCommunityIcons name="moped" size={14} color={Colors.textPrimary} />
+              <Text style={styles.plateText} selectable>
+                {r.plate.toUpperCase()}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <TouchableOpacity
           style={[styles.round, { backgroundColor: Colors.dispatchGreen }]}
@@ -642,6 +654,21 @@ const styles = StyleSheet.create({
   body: { ...Typography.body, color: Colors.textSecondary },
   bodyBold: { ...Typography.bodyBold, color: Colors.textPrimary },
   small: { ...Typography.caption, color: Colors.textSecondary },
+  // Looks like a number plate so the customer can match it to the bike at the gate.
+  plate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: Colors.textPrimary,
+    backgroundColor: '#FFFFFF',
+  },
+  plateText: { ...Typography.telemetry, fontSize: 15, letterSpacing: 1.2, color: Colors.textPrimary },
   avatarPhoto: { width: 48, height: 48, borderRadius: 24 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.dispatchGreen, alignItems: 'center', justifyContent: 'center' },
   round: { width: TOUCH_TARGET, height: TOUCH_TARGET, borderRadius: TOUCH_TARGET / 2, alignItems: 'center', justifyContent: 'center' },
