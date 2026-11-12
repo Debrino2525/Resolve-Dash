@@ -15,6 +15,15 @@ export const OTP_TTL_MS = 10 * 60 * 1000; // code valid for 10 minutes
 export const OTP_MAX_ATTEMPTS = 5; // wrong guesses before the code is burned
 export const OTP_RESEND_COOLDOWN_MS = 30 * 1000; // per account
 export const PROOF_TTL_MS = 30 * 60 * 1000; // verified-phone proof usable for 30 minutes
+/** Codes per account, and per phone number, in any 24 hours (each SMS costs money). */
+export const OTP_DAILY_LIMIT = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+/** All verification SMS together per hour: a ceiling on cost if many accounts are abused at once. */
+export const smsHourlyLimit = (): number => {
+  const n = Number.parseInt(process.env.SMS_HOURLY_LIMIT ?? '', 10);
+  return Number.isInteger(n) && n > 0 ? n : 300;
+};
 
 /** Ghana mobile in E.164: +233 followed by 9 digits starting 2 or 5 (e.g. +233241234567). */
 export const GHANA_MOBILE_E164 = /^\+233[25]\d{8}$/;
@@ -59,6 +68,9 @@ export class PhoneVerificationService {
   private readonly logger = new Logger(PhoneVerificationService.name);
   private readonly pending = new Map<string, PendingCode>();
   private readonly lastSentAt = new Map<string, number>();
+  /** Send times in the last 24 h, by "u:<userId>" and "p:<phone>". */
+  private readonly sentLog = new Map<string, number[]>();
+  private sentAll: number[] = [];
   private readonly secret: Buffer;
 
   constructor(@Inject(SMS_PROVIDER_TOKEN) private readonly sms: ISmsProvider) {
@@ -95,6 +107,25 @@ export class PhoneVerificationService {
     }
 
     // Don't spend SMS credit on (or let someone squat) a number another account already owns.
+    const recent = (key: string): number[] =>
+      (this.sentLog.get(key) ?? []).filter((t) => now - t < DAY_MS);
+    if (
+      recent(`u:${userId}`).length >= OTP_DAILY_LIMIT ||
+      recent(`p:${phone}`).length >= OTP_DAILY_LIMIT
+    ) {
+      throw new HttpException(
+        'Too many codes requested today. Try again tomorrow, or contact GhanaDash support.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.sentAll = this.sentAll.filter((t) => now - t < HOUR_MS);
+    if (this.sentAll.length >= smsHourlyLimit()) {
+      this.logger.error('Hourly verification SMS limit reached; refusing more codes for now');
+      throw new ServiceUnavailableException(
+        'We could not send the SMS code right now. Please try again shortly.',
+      );
+    }
+
     if (isTakenByAnother && (await isTakenByAnother(phone, userId))) {
       throw new ConflictException(
         'This phone number is already registered to another account. Contact GhanaDash support if it is yours.',
@@ -132,6 +163,8 @@ export class PhoneVerificationService {
       attempts: 0,
     });
     this.lastSentAt.set(userId, now);
+    for (const key of [`u:${userId}`, `p:${phone}`]) this.sentLog.set(key, [...recent(key), now]);
+    this.sentAll.push(now);
 
     return {
       verificationId,
@@ -216,6 +249,9 @@ export class PhoneVerificationService {
     }
     for (const [userId, at] of this.lastSentAt) {
       if (now - at > OTP_TTL_MS) this.lastSentAt.delete(userId);
+    }
+    for (const [key, times] of this.sentLog) {
+      if (times.every((t) => now - t >= DAY_MS)) this.sentLog.delete(key);
     }
   }
 }

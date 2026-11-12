@@ -209,6 +209,10 @@ export interface AdminDeliveryDetail extends Omit<AdminDelivery, 'pickup' | 'dro
   /** Wrong PIN entries by the rider (the PIN itself is never exposed). */
   pinAttempts: number;
   hasPackagePhoto: boolean;
+  /** Set when GhanaDash support marked it delivered or cancelled it. */
+  closedBySupport: boolean;
+  /** Support's reason or note for closing it. */
+  supportNote: string | null;
   /** Oldest first. */
   timeline: DeliveryEvent[];
   /** Oldest first. */

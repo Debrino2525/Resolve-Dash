@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ISmsProvider } from '../sms/sms.interface';
 import {
+  OTP_DAILY_LIMIT,
   OTP_MAX_ATTEMPTS,
   OTP_RESEND_COOLDOWN_MS,
   OTP_TTL_MS,
@@ -37,6 +38,54 @@ describe('PhoneVerificationService', () => {
 
   afterAll(() => {
     delete process.env.PHONE_VERIFICATION_SECRET;
+  });
+
+  describe('SMS cost limits', () => {
+    const GAP = OTP_RESEND_COOLDOWN_MS;
+
+    it('caps codes per account per day', async () => {
+      for (let i = 0; i < OTP_DAILY_LIMIT; i++) {
+        await service.sendCode(USER, `+23324123456${i}`, T0 + i * GAP);
+      }
+      await expect(
+        service.sendCode(USER, '+233209999999', T0 + OTP_DAILY_LIMIT * GAP),
+      ).rejects.toThrow(HttpException);
+      // A day later the account can try again.
+      await expect(
+        service.sendCode(USER, '+233209999999', T0 + 24 * 60 * 60 * 1000 + GAP),
+      ).resolves.toBeDefined();
+    });
+
+    it('caps codes per phone number per day, across accounts', async () => {
+      for (let i = 0; i < OTP_DAILY_LIMIT; i++) {
+        await service.sendCode(`user-${i}`, PHONE, T0 + i);
+      }
+      await expect(service.sendCode('user-x', PHONE, T0 + 10)).rejects.toThrow(HttpException);
+      expect(sms.send).toHaveBeenCalledTimes(OTP_DAILY_LIMIT);
+    });
+
+    it('stops all verification SMS once the hourly ceiling is reached', async () => {
+      process.env.SMS_HOURLY_LIMIT = '3';
+      try {
+        for (let i = 0; i < 3; i++) await service.sendCode(`u-${i}`, `+23324100000${i}`, T0 + i);
+        await expect(service.sendCode('u-9', '+233241000009', T0 + 9)).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+      } finally {
+        delete process.env.SMS_HOURLY_LIMIT;
+      }
+    });
+
+    it('does not count a send that failed', async () => {
+      sms.send.mockRejectedValue(new Error('mNotify down'));
+      for (let i = 0; i < OTP_DAILY_LIMIT + 2; i++) {
+        await expect(service.sendCode(USER, PHONE, T0 + i * GAP)).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+      }
+      sms.send.mockResolvedValue(undefined);
+      await expect(service.sendCode(USER, PHONE, T0 + 99 * GAP)).resolves.toBeDefined();
+    });
   });
 
   describe('sendCode', () => {

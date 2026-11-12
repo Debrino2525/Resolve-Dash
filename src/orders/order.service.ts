@@ -342,8 +342,11 @@ export class OrderService {
     const showRider =
       withRider && order.riderId && ['ASSIGNED', 'PICKED_UP', 'DELIVERED'].includes(order.status);
     const rider = showRider ? await this.orders.assignedRider(order.riderId as string) : null;
-    // Live position only while the rider is actually on this job.
-    if (rider && order.status === 'DELIVERED') rider.location = null;
+    // Live position and phone number only while the rider is actually on this job.
+    if (rider && order.status === 'DELIVERED') {
+      rider.location = null;
+      rider.phoneNumber = '';
+    }
     const messageCount = order.riderId ? await this.orders.messageCount(order.id) : 0;
     const call = this.calls?.summaryFor(order.id, 'CUSTOMER', order.status) ?? null;
     return {

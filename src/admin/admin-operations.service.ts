@@ -123,6 +123,8 @@ interface DeliveryDetailRow extends DeliveryRow {
   has_package_photo: boolean;
   extra_stops: unknown;
   stops_fare_pesewas: number | null;
+  admin_closed_by: string | null;
+  admin_close_note: string | null;
 }
 
 /**
@@ -221,7 +223,9 @@ export function buildTimeline(o: AdminDeliveryDetail, ratedAt: string | null): D
     events.push({
       kind: 'DELIVERED',
       title: 'Delivered',
-      detail: 'Handover PIN confirmed',
+      detail: o.closedBySupport
+        ? 'Marked delivered by GhanaDash support'
+        : 'Handover PIN confirmed',
       at: o.deliveredAt,
     });
   }
@@ -292,7 +296,7 @@ export class AdminOperationsService {
                 o.dropoff_gps_code, o.receiver_name, o.receiver_phone, o.notes, o.duration_s,
                 o.base_fare_pesewas, o.distance_fare_pesewas, o.payment_method,
                 o.rating_tags, o.rating_comment, o.rated_at, o.pin_attempts,
-                o.extra_stops, o.stops_fare_pesewas,
+                o.extra_stops, o.stops_fare_pesewas, o.admin_closed_by, o.admin_close_note,
                 (o.package_photo_path IS NOT NULL) AS has_package_photo
          ${DELIVERY_FROM}
          WHERE o.id = $1`,
@@ -357,6 +361,8 @@ export class AdminOperationsService {
       ratingComment: row.rating_comment,
       pinAttempts: Number(row.pin_attempts ?? 0),
       hasPackagePhoto: Boolean(row.has_package_photo),
+      closedBySupport: Boolean(row.admin_closed_by),
+      supportNote: row.admin_close_note ?? null,
       timeline: [],
       offers: offers.rows.map((f) => ({
         id: f.id,

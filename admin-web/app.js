@@ -986,10 +986,18 @@
       if (d.rating) rows.push(['Rating', '<span class="stars">' + esc(stars(d.rating)) + '</span> ' + esc(d.rating + '/5') + (d.ratingTags && d.ratingTags.length ? ' <span class="muted small">· ' + esc(d.ratingTags.map(function (t) { return t.toLowerCase(); }).join(', ')) + '</span>' : '') + (d.ratingComment ? '<div class="muted small">“' + esc(d.ratingComment) + '”</div>' : '')]);
       if (d.pinAttempts) rows.push(['Wrong PINs', badge(d.pinAttempts >= 3 ? 'red' : 'amber', d.pinAttempts + ' attempt' + (d.pinAttempts === 1 ? '' : 's'))]);
       rows.push(['Order ID', '<span class="mono">' + esc(d.id) + '</span>']);
+      if (d.closedBySupport) rows.push(['Closed by support', esc(d.supportNote || '—')]);
+      var open = d.status === 'SEARCHING' || d.status === 'ASSIGNED' || d.status === 'PICKED_UP';
+      var supportActions = open
+        ? '<section class="drawer-sec"><h3>Support</h3><div style="display:flex;flex-wrap:wrap;gap:8px">' +
+            (d.status === 'PICKED_UP' ? '<button class="btn btn-primary" data-action="delivery-complete" data-id="' + esc(d.id) + '" data-code="' + esc(d.code) + '">' + ico('check') + 'Mark delivered</button>' : '') +
+            '<button class="btn btn-danger" data-action="delivery-cancel" data-id="' + esc(d.id) + '" data-code="' + esc(d.code) + '">' + ico('close') + 'Cancel delivery</button>' +
+          '</div><p class="muted small">For a stuck delivery, e.g. the rider is locked out after wrong PINs. Recorded with your account; the customer and rider are notified.</p></section>'
+        : '';
 
       openDrawer(key,
         drawerHead('Delivery', '<span class="mono-strong">' + esc(d.code) + '</span>', '<div class="drawer-badges">' + mapBadge(DSTATUS, d.status) + '</div>') +
-        '<section class="drawer-sec">' + facts(rows) + '</section>' +
+        '<section class="drawer-sec">' + facts(rows) + '</section>' + supportActions +
         '<section class="drawer-sec"><h3>Route' + ((d.stops || []).length ? ' <span class="muted">(' + (d.stops.length + 1) + ' drop-offs)</span>' : '') + '</h3><div class="stops">' + stopBlock('p', 'Pickup', d.pickup) +
           (d.stops || []).map(function (s, i) {
             var state = s.status === 'DELIVERED' ? badge('green', 'Delivered') : s.status === 'FAILED' ? badge('red', 'Not delivered') : badge('amber', 'Pending');
@@ -1010,6 +1018,28 @@
       if (drawerKey !== key) return;
       fail(err);
       if (!err.auth) openDrawer(key, drawerError('Delivery', err));
+    }
+  }
+
+  async function deliveryAction(action, button) {
+    var id = button.getAttribute('data-id');
+    var code = button.getAttribute('data-code');
+    var complete = action === 'delivery-complete';
+    var c = await confirmDialog(complete
+      ? { title: 'Mark ' + code + ' as delivered?', body: 'Only once you have confirmed with the customer that the package was handed over. The rider is freed to take new orders.', okLabel: 'Mark delivered', reason: { label: 'How was the handover confirmed? (kept on the order)', placeholder: 'e.g. Customer confirmed by phone; rider locked out after wrong PINs', required: true } }
+      : { title: 'Cancel ' + code + '?', body: 'The delivery ends straight away and the customer and rider are told. This cannot be undone.', okLabel: 'Cancel delivery', danger: true, reason: { label: 'Reason (kept on the order)', placeholder: 'e.g. Rider unreachable after pickup', required: true } });
+    if (!c.ok) return;
+    if (c.reason.length < 3) { toast('Give a short reason (at least 3 characters).', 'err'); return; }
+    button.disabled = true;
+    try {
+      await post('/admin/api/deliveries/' + encodeURIComponent(id) + (complete ? '/complete' : '/cancel'), { reason: c.reason });
+      toast(code + (complete ? ' marked delivered' : ' cancelled'));
+      drawerKey = null;
+      openDelivery(id);
+      if (currentPage() === 'deliveries') loadDeliveries();
+    } catch (err) {
+      fail(err);
+      button.disabled = false;
     }
   }
 
@@ -1360,6 +1390,7 @@
         }
         case 'approve-rider': case 'reject-rider': case 'grant-access': case 'end-trial': riderAction(action, el); return;
         case 'doc-approve': case 'doc-reject': reviewDoc(action, el); return;
+        case 'delivery-complete': case 'delivery-cancel': deliveryAction(action, el); return;
         case 'view-image': if (el.querySelector('img')) viewImage(el.getAttribute('data-doc')); return;
         case 'open-file': openFile(el.getAttribute('data-doc')); return;
         case 'close-viewer': $('viewer').close(); return;

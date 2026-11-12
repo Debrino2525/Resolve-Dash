@@ -245,6 +245,30 @@ describe('OrderService quotes', () => {
       }),
     ).rejects.toThrow(ConflictException);
   });
+
+  it("stops showing the rider's phone and position once the delivery is done", async () => {
+    const rider = (): Record<string, unknown> => ({
+      id: 'r1',
+      fullName: 'Kojo Mensah',
+      phoneNumber: '+233241112222',
+      location: { lat: 4.9, lng: -1.75, heading: null, updatedAt: 'now' },
+    });
+    Object.assign(orders, {
+      findById: jest.fn(),
+      messageCount: jest.fn().mockResolvedValue(0),
+    });
+    const repo = orders as unknown as { findById: jest.Mock };
+    orders.assignedRider.mockImplementation(async () => rider() as never);
+
+    repo.findById.mockResolvedValue(order({ status: 'PICKED_UP', riderId: 'r1' }));
+    const live = await service.get(USER, 'o1');
+    expect(live.rider).toMatchObject({ phoneNumber: '+233241112222' });
+    expect(live.rider?.location).not.toBeNull();
+
+    repo.findById.mockResolvedValue(order({ status: 'DELIVERED', riderId: 'r1' }));
+    const done = await service.get(USER, 'o1');
+    expect(done.rider).toMatchObject({ fullName: 'Kojo Mensah', phoneNumber: '', location: null });
+  });
 });
 
 describe('OrderService recent places', () => {

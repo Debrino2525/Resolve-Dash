@@ -59,6 +59,25 @@ export class DeliveryNotifier {
     });
   }
 
+  /** GhanaDash support closed the delivery (marked delivered or cancelled it). */
+  closedBySupport(order: DeliveryOrder, outcome: 'DELIVERED' | 'CANCELLED'): void {
+    const delivered = outcome === 'DELIVERED';
+    if (order.riderId) {
+      this.push?.notify(order.riderId, 'rider', {
+        title: delivered ? 'Delivery completed by support' : 'Delivery cancelled by support',
+        body: `GhanaDash support ${delivered ? 'completed' : 'cancelled'} ${order.code}. You can take new orders.`,
+        channel: 'alerts',
+        data: { type: 'order', orderId: order.id },
+      });
+    }
+    this.toCustomer(order, {
+      title: delivered ? 'Delivery completed' : 'Delivery cancelled',
+      body: delivered
+        ? `GhanaDash support marked ${order.code} as delivered.`
+        : `GhanaDash support cancelled ${order.code}. Contact us if you have questions.`,
+    });
+  }
+
   // ---------- customer ----------
 
   accepted(orderId: string): void {

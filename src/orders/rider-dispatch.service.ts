@@ -353,7 +353,7 @@ export class RiderDispatchService {
   /** Rider can't do an accepted job (before pickup): it goes back to dispatch for someone else. */
   async release(riderId: string, orderId: string): Promise<DispatchState> {
     const res = await this.db.query(
-      `UPDATE delivery_orders SET status = 'SEARCHING', rider_id = NULL, assigned_at = NULL
+      `UPDATE delivery_orders SET status = 'SEARCHING', rider_id = NULL, assigned_at = NULL, search_started_at = NOW()
        WHERE id = $1 AND rider_id = $2 AND status = 'ASSIGNED' RETURNING id`,
       [orderId, riderId],
     );

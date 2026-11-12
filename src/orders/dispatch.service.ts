@@ -109,7 +109,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const timedOut = await this.db.query<{ id: string; customer_id: string; code: string }>(
       `UPDATE delivery_orders SET status = 'NO_RIDER', cancelled_by = 'SYSTEM',
               cancel_reason = 'No rider was available', cancelled_at = NOW()
-       WHERE status = 'SEARCHING' AND requested_at < NOW() - make_interval(mins => $1)
+       WHERE status = 'SEARCHING'
+         AND COALESCE(search_started_at, requested_at) < NOW() - make_interval(mins => $1)
        RETURNING id, customer_id, code`,
       [SEARCH_TIMEOUT_MINUTES],
     );

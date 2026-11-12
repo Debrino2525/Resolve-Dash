@@ -17,6 +17,7 @@ function fakeDb(tokens: string[]): { db: DatabaseService; queries: Q[] } {
   return { db, queries };
 }
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function service(tokens: string[], tickets: unknown[] = []) {
   const { db, queries } = fakeDb(tokens);
   const push = new PushService(db);
@@ -94,6 +95,7 @@ describe('PushService', () => {
 });
 
 describe('DeliveryNotifier', () => {
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   const pushSpy = () => {
     const calls: { userId: string; app: string; msg: PushMessage }[] = [];
     const push = {

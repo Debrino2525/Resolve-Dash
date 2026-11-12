@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { maskPhone } from '../sms/mnotify.provider';
 import { ISmsProvider, SMS_PROVIDER_TOKEN } from '../sms/sms.interface';
+import { smsHourlyLimit } from '../verification/phone-verification.service';
 
 /**
  * Supabase Auth "Send SMS" hook: Supabase generates the sign-in code and calls this endpoint to
@@ -16,6 +17,8 @@ import { ISmsProvider, SMS_PROVIDER_TOKEN } from '../sms/sms.interface';
 
 const TOLERANCE_SEC = 5 * 60;
 const MAX_PER_HOUR = 5;
+/** Sign-in codes per number in any 24 hours. */
+const MAX_PER_DAY = 10;
 const GHANA_E164 = /^\+233\d{9}$/;
 
 export class HookError extends Error {
@@ -47,10 +50,7 @@ export function verifyStandardWebhook(
   for (const one of secret.split('|')) {
     const key = Buffer.from(one.trim().replace(/^v1,whsec_/, ''), 'base64');
     if (key.length === 0) continue;
-    const expected = crypto
-      .createHmac('sha256', key)
-      .update(`${id}.${timestamp}.${body}`)
-      .digest();
+    const expected = crypto.createHmac('sha256', key).update(`${id}.${timestamp}.${body}`).digest();
     for (const part of signature.split(' ')) {
       const [version, sig] = part.split(',');
       if (version !== 'v1' || !sig) continue;
@@ -65,6 +65,7 @@ export function verifyStandardWebhook(
 export class SendSmsHookService {
   private readonly logger = new Logger(SendSmsHookService.name);
   private readonly sent = new Map<string, number[]>();
+  private sentAll: number[] = [];
   now: () => number = () => Date.now();
 
   constructor(@Inject(SMS_PROVIDER_TOKEN) private readonly sms: ISmsProvider) {}
@@ -95,12 +96,26 @@ export class SendSmsHookService {
     }
 
     const nowMs = this.now();
-    const recent = (this.sent.get(phone) ?? []).filter((t) => nowMs - t < 60 * 60 * 1000);
-    if (recent.length >= MAX_PER_HOUR) {
+    const day = (this.sent.get(phone) ?? []).filter((t) => nowMs - t < 24 * 60 * 60 * 1000);
+    if (day.filter((t) => nowMs - t < 60 * 60 * 1000).length >= MAX_PER_HOUR) {
       throw new HookError(429, 'Too many codes for this number. Try again in an hour.');
     }
-    recent.push(nowMs);
-    this.sent.set(phone, recent);
+    if (day.length >= MAX_PER_DAY) {
+      throw new HookError(429, 'Too many codes for this number today. Try again tomorrow.');
+    }
+    // Ceiling on cost across all numbers (shared with nothing else; see SMS_HOURLY_LIMIT).
+    this.sentAll = this.sentAll.filter((t) => nowMs - t < 60 * 60 * 1000);
+    if (this.sentAll.length >= smsHourlyLimit()) {
+      this.logger.error('Hourly sign-in SMS limit reached; refusing more codes for now');
+      throw new HookError(503, 'Could not send the SMS right now. Try again shortly.');
+    }
+    day.push(nowMs);
+    this.sent.set(phone, day);
+    this.sentAll.push(nowMs);
+    if (this.sent.size > 10_000) {
+      for (const [k, v] of this.sent)
+        if (v.every((t) => nowMs - t >= 24 * 60 * 60 * 1000)) this.sent.delete(k);
+    }
 
     try {
       await this.sms.send(

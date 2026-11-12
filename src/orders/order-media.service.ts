@@ -147,8 +147,10 @@ export class OrderMediaService {
     const { order, role } = await this.requireParticipant(userId, orderId);
     const res = await this.db.query<MessageRow>(
       `SELECT id, sender_id, sender_role, body, photo_path, created_at
-       FROM order_messages WHERE order_id = $1 ORDER BY created_at ASC, id ASC LIMIT 500`,
-      [orderId],
+       FROM order_messages
+       WHERE order_id = $1 AND created_at >= COALESCE($2::timestamptz, '-infinity')
+       ORDER BY created_at ASC, id ASC LIMIT 500`,
+      [orderId, this.visibleSince(order, role)],
     );
     return {
       orderId,
@@ -191,10 +193,11 @@ export class OrderMediaService {
     orderId: string,
     messageId: string,
   ): Promise<StoredFile> {
-    await this.requireParticipant(userId, orderId);
+    const { order, role } = await this.requireParticipant(userId, orderId);
     const res = await this.db.query<{ photo_path: string | null }>(
-      `SELECT photo_path FROM order_messages WHERE id = $1 AND order_id = $2`,
-      [messageId, orderId],
+      `SELECT photo_path FROM order_messages
+       WHERE id = $1 AND order_id = $2 AND created_at >= COALESCE($3::timestamptz, '-infinity')`,
+      [messageId, orderId, this.visibleSince(order, role)],
     );
     const path = res.rows[0]?.photo_path;
     if (!path) throw new NotFoundException('Photo not found');
@@ -227,6 +230,14 @@ export class OrderMediaService {
       hasPhoto: Boolean(r.photo_path),
       createdAt: new Date(r.created_at).toISOString(),
     };
+  }
+
+  /**
+   * A rider sees only the chat since they took the job: if an earlier rider handed it back, that
+   * conversation (and its photos) stays between the customer and that rider.
+   */
+  private visibleSince(order: DeliveryOrder, role: ChatRole): Date | string | null {
+    return role === 'RIDER' ? (order.assignedAt ?? null) : null;
   }
 
   roleOf(order: DeliveryOrder, userId: string): ChatRole | null {

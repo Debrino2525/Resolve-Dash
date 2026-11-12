@@ -4,6 +4,7 @@ import { DatabaseModule } from '../database/database.module';
 import { PushModule } from '../push/push.module';
 import { SupabaseStorageClient } from '../storage/supabase-storage.client';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { AdminDeliveryService } from './admin-delivery.service';
 import { DeliveryNotifier } from './delivery-notifier';
 import { DispatchService } from './dispatch.service';
 import { OrderCallController } from './order-call.controller';
@@ -32,8 +33,9 @@ import { RiderDispatchService } from './rider-dispatch.service';
     DispatchService,
     DeliveryNotifier,
     RiderDispatchService,
+    AdminDeliveryService,
     SupabaseStorageClient,
   ],
-  exports: [OrderRepository],
+  exports: [OrderRepository, AdminDeliveryService],
 })
 export class OrdersModule {}

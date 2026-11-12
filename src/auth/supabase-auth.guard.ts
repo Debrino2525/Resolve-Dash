@@ -152,7 +152,9 @@ export class SupabaseAuthGuard implements CanActivate {
 
     return {
       id: payload.sub,
-      phoneNumber: payload.phone ?? (payload.user_metadata?.phone as string | undefined),
+      // Only the top-level claim: Supabase sets it after verifying the number. user_metadata is
+      // editable by the user, so a phone there proves nothing.
+      phoneNumber: payload.phone || undefined,
       email: payload.email,
       role: payload.app_metadata?.role ?? payload.role,
       appMetadata: payload.app_metadata,

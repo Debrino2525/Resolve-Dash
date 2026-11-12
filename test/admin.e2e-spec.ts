@@ -9,6 +9,7 @@ import { AdminService } from '../src/admin/admin.service';
 import { AdminGuard } from '../src/auth/admin.guard';
 import { AdminInsightsService } from '../src/admin/admin-insights.service';
 import { AdminOperationsService } from '../src/admin/admin-operations.service';
+import { AdminDeliveryService } from '../src/orders/admin-delivery.service';
 import { RiderDocumentsService } from '../src/riders/rider-documents.service';
 import { SupabaseAuthGuard } from '../src/auth/supabase-auth.guard';
 
@@ -27,6 +28,10 @@ describe('Admin portal E2E (auth lockdown)', () => {
     getCustomer: jest.fn().mockResolvedValue({ id: 'x' }),
     getLive: jest.fn().mockResolvedValue({ generatedAt: 'now', riders: [], deliveries: [] }),
   } as unknown as jest.Mocked<AdminOperationsService>;
+  const mockDeliveries = {
+    markDelivered: jest.fn().mockResolvedValue(undefined),
+    cancel: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<AdminDeliveryService>;
   const mockDocuments = {
     getChecklistForAdmin: jest.fn(),
     readFileForAdmin: jest.fn(),
@@ -81,6 +86,7 @@ describe('Admin portal E2E (auth lockdown)', () => {
         { provide: AdminService, useValue: mockAdminService },
         { provide: AdminInsightsService, useValue: mockInsights },
         { provide: AdminOperationsService, useValue: mockOperations },
+        { provide: AdminDeliveryService, useValue: mockDeliveries },
         { provide: RiderDocumentsService, useValue: mockDocuments },
         AdminAuthService,
         SupabaseAuthGuard,
@@ -300,6 +306,44 @@ describe('Admin portal E2E (auth lockdown)', () => {
         q: undefined,
         page: 1,
       });
+    });
+
+    it('lets support close a stuck delivery, with a reason and their admin id', async () => {
+      const id = '66666666-6666-6666-6666-666666666666';
+      await request(app.getHttpServer())
+        .post(`/admin/api/deliveries/${id}/complete`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ reason: 'Customer confirmed by phone' })
+        .expect(200);
+      expect(mockDeliveries.markDelivered).toHaveBeenCalledWith(
+        id,
+        '55555555-5555-5555-5555-555555555555',
+        'Customer confirmed by phone',
+      );
+      await request(app.getHttpServer())
+        .post(`/admin/api/deliveries/${id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ reason: 'Rider unreachable' })
+        .expect(200);
+      expect(mockDeliveries.cancel).toHaveBeenCalledWith(
+        id,
+        '55555555-5555-5555-5555-555555555555',
+        'Rider unreachable',
+      );
+    });
+
+    it('requires a reason and an admin to close a delivery', async () => {
+      const id = '66666666-6666-6666-6666-666666666666';
+      await request(app.getHttpServer())
+        .post(`/admin/api/deliveries/${id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({})
+        .expect(400);
+      await request(app.getHttpServer())
+        .post(`/admin/api/deliveries/${id}/complete`)
+        .set('Authorization', `Bearer ${riderToken()}`)
+        .send({ reason: 'I delivered it' })
+        .expect(403);
     });
 
     it('rejects non-UUID order and customer ids with 400', async () => {

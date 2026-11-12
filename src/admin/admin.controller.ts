@@ -28,6 +28,7 @@ import { AdminInsightsService } from './admin-insights.service';
 import { AdminOperationsService, parseDeliveryFilter, parsePage } from './admin-operations.service';
 import { readPortalAsset } from './admin-portal.assets';
 import { AdminService } from './admin.service';
+import { AdminDeliveryService } from '../orders/admin-delivery.service';
 import {
   AdminCustomer,
   AdminCustomerDetail,
@@ -69,6 +70,7 @@ export class AdminController {
     private readonly riderDocuments: RiderDocumentsService,
     private readonly insights: AdminInsightsService,
     private readonly operations: AdminOperationsService,
+    private readonly deliveries: AdminDeliveryService,
   ) {}
 
   /** Public: exchanges admin email + password for a Supabase access token (admin role only). */
@@ -127,6 +129,36 @@ export class AdminController {
   @Get('api/deliveries/:id')
   @UseGuards(AdminGuard)
   getDelivery(@Param('id', ParseUUIDPipe) id: string): Promise<AdminDeliveryDetail> {
+    return this.operations.getDelivery(id);
+  }
+
+  /** Support completes a stuck delivery (package handed over, e.g. rider locked out by wrong PINs). */
+  @Post('api/deliveries/:id/complete')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
+  async completeDelivery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+    @CurrentUser() admin: AuthUser,
+  ): Promise<AdminDeliveryDetail> {
+    const parsed = requiredReasonSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Say how the handover was confirmed');
+    await this.deliveries.markDelivered(id, admin.id, parsed.data.reason);
+    return this.operations.getDelivery(id);
+  }
+
+  /** Support cancels a delivery that has not been delivered (any stage, including picked up). */
+  @Post('api/deliveries/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
+  async cancelDelivery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+    @CurrentUser() admin: AuthUser,
+  ): Promise<AdminDeliveryDetail> {
+    const parsed = requiredReasonSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('A reason is required');
+    await this.deliveries.cancel(id, admin.id, parsed.data.reason);
     return this.operations.getDelivery(id);
   }
 

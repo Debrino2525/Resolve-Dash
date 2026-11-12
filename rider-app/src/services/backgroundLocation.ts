@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Alert, AppState, Linking, Platform } from 'react-native';
-import { updatePresence } from '../api/backendClient';
+import { ApiError, updatePresence } from '../api/backendClient';
 
 /**
  * Location while the screen is off or the rider is in another app (navigation, WhatsApp...).
@@ -34,19 +34,32 @@ TaskManager.defineTask<{ locations?: Location.LocationObject[] }>(
     const now = Date.now();
     if (now - lastPost < MIN_POST_MS) return;
     lastPost = now;
+    const position = {
+      lat: fix.coords.latitude,
+      lng: fix.coords.longitude,
+      heading: fix.coords.heading != null && fix.coords.heading >= 0 ? fix.coords.heading : null,
+      accuracy: fix.coords.accuracy ?? null,
+    };
     try {
       const online = (await AsyncStorage.getItem(ONLINE_KEY)) === '1';
-      const s = await updatePresence({
-        online,
-        lat: fix.coords.latitude,
-        lng: fix.coords.longitude,
-        heading: fix.coords.heading != null && fix.coords.heading >= 0 ? fix.coords.heading : null,
-        accuracy: fix.coords.accuracy ?? null,
-      });
+      let s;
+      try {
+        s = await updatePresence({ online, ...position });
+      } catch (err) {
+        // Plan ran out or account no longer approved: stop asking for orders, but keep sharing
+        // the position if a delivery is still under way.
+        if (!(err instanceof ApiError && err.status === 403 && online)) throw err;
+        await rememberWantOnline(false);
+        s = await updatePresence({ online: false, ...position });
+      }
       // Server says we're done (went offline elsewhere, plan expired, delivery finished).
       if (!s.online && !s.job) await stopBackgroundTracking();
-    } catch {
-      // No signal or signed out: try again on the next fix.
+    } catch (err) {
+      // Signed out or refused: stop for good (the app restarts tracking when it is opened and
+      // the rider goes online again). Anything else (no signal): try again on the next fix.
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        await stopBackgroundTracking();
+      }
     }
   },
 );

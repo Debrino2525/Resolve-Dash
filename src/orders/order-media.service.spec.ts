@@ -130,6 +130,20 @@ describe('OrderMediaService', () => {
     });
   });
 
+  it('shows a rider only the chat since they took the job; the customer sees all of it', async () => {
+    const assignedAt = '2026-11-12T10:00:00.000Z';
+    const { svc, query } = setup(order({ assignedAt }));
+    await svc.thread(RIDER, ORDER);
+    expect(query.mock.calls.at(-1)?.[1]).toEqual([ORDER, assignedAt]);
+    await svc.thread(CUSTOMER, ORDER);
+    expect(query.mock.calls.at(-1)?.[1]).toEqual([ORDER, null]);
+    await svc.readMessagePhoto(RIDER, 'token', ORDER, MSG);
+    const photoQuery = query.mock.calls.find(([sql]) =>
+      String(sql).startsWith('SELECT photo_path'),
+    );
+    expect(photoQuery?.[1]).toEqual([MSG, ORDER, assignedAt]);
+  });
+
   it('keeps strangers out of the chat', async () => {
     await expect(setup().svc.thread(STRANGER, ORDER)).rejects.toThrow(NotFoundException);
   });
