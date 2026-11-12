@@ -18,6 +18,7 @@ import { SubscriptionCard } from '../components/SubscriptionCard';
 import { useDispatch } from '../services/dispatch';
 import { useOfferAlert } from '../services/offerAlert';
 import { getCurrentCoords, LatLng, useRiderLocation } from '../services/location';
+import { ensureBackgroundPermission, maybeShowBatteryTip } from '../services/backgroundLocation';
 import { useTurnByTurn } from '../services/navigation';
 import { fetchRoadRoute, formatDuration, RoadRoute } from '../services/routing';
 import { Colors, Elevation, Radii, Spacing, TOUCH_TARGET, Typography } from '../theme/theme';
@@ -134,6 +135,7 @@ export function DashboardScreen({
 
   const collapseSheet = useCallback(() => setSheetExpanded(false), []);
 
+  const backgroundWarned = useRef(false);
   const goOnline = async (): Promise<void> => {
     if (!canGoOnline) {
       setDetailsOpen(true);
@@ -159,8 +161,22 @@ export function DashboardScreen({
       Alert.alert('No GPS signal yet', 'Move to an open area and try again.');
       return;
     }
+    const background = await ensureBackgroundPermission();
     await dispatch.goOnline(fix);
     setGoingOnline(false);
+    if (background) {
+      void maybeShowBatteryTip();
+    } else if (!backgroundWarned.current) {
+      backgroundWarned.current = true;
+      Alert.alert(
+        'Keep GhanaDash open',
+        'Without "Allow all the time" location, you only get orders while GhanaDash is on screen. You can change this in Settings.',
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+        ],
+      );
+    }
   };
 
   const goOffline = (): void => {

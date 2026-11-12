@@ -13,6 +13,7 @@ import { DatabaseService } from '../database/database.service';
 import { DispatchService } from './dispatch.service';
 import { haversineMeters, isInGhana, LatLng, roadEstimate } from './geo';
 import { OrderCallService } from './order-call.service';
+import { DeliveryNotifier } from './delivery-notifier';
 import { OrderRepository } from './order.repository';
 import {
   CustomerOrderView,
@@ -84,6 +85,7 @@ export class OrderService {
     private readonly customers: CustomerRepository,
     private readonly dispatch: DispatchService,
     @Optional() private readonly calls?: OrderCallService,
+    @Optional() private readonly notify?: DeliveryNotifier,
   ) {}
 
   async quote(
@@ -260,7 +262,7 @@ export class OrderService {
     orderId: string,
     reason: string | undefined,
   ): Promise<CustomerOrderView> {
-    await this.db.withTransaction(async (client) => {
+    const before = await this.db.withTransaction(async (client) => {
       const order = await this.orders.lockById(client, orderId);
       if (!order || order.customerId !== userId) throw new NotFoundException('Order not found');
       if (order.status !== 'SEARCHING' && order.status !== 'ASSIGNED') {
@@ -281,7 +283,9 @@ export class OrderService {
          WHERE order_id = $1 AND status = 'OFFERED'`,
         [orderId],
       );
+      return order;
     });
+    if (before.status === 'ASSIGNED') this.notify?.customerCancelled(before);
     return this.get(userId, orderId);
   }
 

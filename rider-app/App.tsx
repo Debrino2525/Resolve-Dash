@@ -28,6 +28,8 @@ import { confirmFinishLater, PendingVerificationScreen } from './src/screens/Pen
 import { VerifyCodeScreen } from './src/screens/VerifyCodeScreen';
 import { WelcomeBackScreen } from './src/screens/WelcomeBackScreen';
 import { executePaystackSubscriptionPayment } from './src/services/paystackCheckout';
+import { stopBackgroundTracking } from './src/services/backgroundLocation';
+import { registerForPush, unregisterFromPush } from './src/services/push';
 import { Colors as AuthColors } from './src/theme/authTheme';
 import { Colors, Spacing, Typography } from './src/theme/theme';
 import { RiderProfile, SubscriptionDetails } from './src/types/subscription';
@@ -103,6 +105,12 @@ export default function App(): React.JSX.Element {
       setRefreshing(false);
     }
   }, []);
+
+  // Approved rider signed in: register this phone for offer and call notifications.
+  const isActiveRider = phase === 'ready' && profile?.onboardingStatus === 'ACTIVE';
+  useEffect(() => {
+    if (isActiveRider) void registerForPush();
+  }, [isActiveRider]);
 
   // Returning rider on this phone: start on Welcome back.
   useEffect(() => {
@@ -270,6 +278,8 @@ export default function App(): React.JSX.Element {
   }
 
   async function handleSignOut(): Promise<void> {
+    await unregisterFromPush();
+    await stopBackgroundTracking();
     await signOut(); // SIGNED_OUT event resets state
   }
 

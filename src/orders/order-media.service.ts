@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { DatabaseService } from '../database/database.service';
@@ -11,6 +12,7 @@ import {
   StoredFile,
   SupabaseStorageClient,
 } from '../storage/supabase-storage.client';
+import { DeliveryNotifier } from './delivery-notifier';
 import { OrderRepository } from './order.repository';
 import { DeliveryOrder, OrderStatus } from './order.types';
 
@@ -98,6 +100,7 @@ export class OrderMediaService {
     private readonly db: DatabaseService,
     private readonly orders: OrderRepository,
     private readonly storage: SupabaseStorageClient,
+    @Optional() private readonly notify?: DeliveryNotifier,
   ) {}
 
   /** Customer, before booking: store the item photo and return its path for POST /orders. */
@@ -212,6 +215,7 @@ export class OrderMediaService {
        VALUES ($1, $2, $3, $4, $5)`,
       [orderId, senderId, role, body, photoPath],
     );
+    this.notify?.chatMessageById(orderId, role, body);
   }
 
   private toMessage(r: MessageRow, userId: string): OrderMessage {

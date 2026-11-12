@@ -35,6 +35,7 @@ import { OrdersScreen } from './src/screens/OrdersScreen';
 import { TrackingScreen } from './src/screens/TrackingScreen';
 import { VerifyCodeScreen } from './src/screens/VerifyCodeScreen';
 import { WelcomeBackScreen } from './src/screens/WelcomeBackScreen';
+import { registerForPush, unregisterFromPush, useOrderNotificationTaps } from './src/services/push';
 import { Colors, Spacing, Typography } from './src/theme/theme';
 import { CustomerOrder, CustomerProfile, DeliveryDraft, isActive, Quote } from './src/types/orders';
 
@@ -68,6 +69,12 @@ export default function App(): React.JSX.Element {
 
   const [tab, setTab] = useState<Tab>('home');
   const [page, setPage] = useState<Page>({ name: 'tabs' });
+  // Signed in with a profile: register for delivery notifications, and open a tapped one.
+  const signedInReady = phase === 'ready' && Boolean(profile);
+  useEffect(() => {
+    if (signedInReady) void registerForPush();
+  }, [signedInReady]);
+  useOrderNotificationTaps(signedInReady, (orderId) => setPage({ name: 'track', orderId, initial: null }));
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
@@ -296,6 +303,7 @@ export default function App(): React.JSX.Element {
   }
 
   const handleSignOut = async (): Promise<void> => {
+    await unregisterFromPush();
     await signOut();
   };
 

@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { SubscriptionService } from '../subscriptions/subscription.service';
+import { DeliveryNotifier } from './delivery-notifier';
 import { DispatchService } from './dispatch.service';
 import { OrderCallService } from './order-call.service';
 import { OrderRepository, parseExtraStops } from './order.repository';
@@ -66,6 +67,7 @@ export class RiderDispatchService {
     private readonly subscriptions: SubscriptionService,
     private readonly dispatch: DispatchService,
     @Optional() private readonly calls?: OrderCallService,
+    @Optional() private readonly notify?: DeliveryNotifier,
   ) {}
 
   /** Heartbeat while on duty (every ~10 s) and the on/off switch. Returns offers and job. */
@@ -92,7 +94,8 @@ export class RiderDispatchService {
            longitude = COALESCE(EXCLUDED.longitude, rider_presence.longitude),
            heading = EXCLUDED.heading,
            accuracy_m = EXCLUDED.accuracy_m,
-           updated_at = NOW()`,
+           updated_at = NOW(),
+           stale_alerted_at = NULL`,
       [
         riderId,
         input.online,
@@ -143,7 +146,7 @@ export class RiderDispatchService {
     if (!eligibility.canAccept)
       throw new ForbiddenException('Your account cannot take orders right now.');
 
-    await this.db.withTransaction(async (client) => {
+    const orderId = await this.db.withTransaction(async (client) => {
       const offer = await client.query<{ order_id: string; status: string; expired: boolean }>(
         `SELECT order_id, status, expires_at < NOW() AS expired FROM order_offers
          WHERE id = $1 AND rider_id = $2 FOR UPDATE`,
@@ -177,7 +180,9 @@ export class RiderDispatchService {
         }
         throw err;
       }
+      return o.order_id;
     });
+    this.notify?.accepted(orderId);
     return this.state(riderId);
   }
 
@@ -198,6 +203,7 @@ export class RiderDispatchService {
       [orderId, riderId],
     );
     if (res.rows.length === 0) throw new ConflictException('This job is not waiting for pickup.');
+    this.notify?.pickedUp(orderId);
     return this.state(riderId);
   }
 
@@ -243,6 +249,7 @@ export class RiderDispatchService {
           : 'Wrong PIN. No attempts left: call the customer or GhanaDash support.',
       );
     }
+    this.notify?.delivered(orderId);
     return this.state(riderId);
   }
 
@@ -282,6 +289,7 @@ export class RiderDispatchService {
           : 'Wrong PIN. No attempts left: call the customer, or mark this drop-off as not delivered.',
       );
     }
+    this.notify?.stopDone(orderId, index);
     return this.state(riderId);
   }
 
@@ -305,6 +313,7 @@ export class RiderDispatchService {
         failReason: reason.trim().slice(0, 255),
       });
     });
+    this.notify?.stopDone(orderId, index);
     return this.state(riderId);
   }
 
@@ -353,6 +362,7 @@ export class RiderDispatchService {
         'Only an accepted job that has not been picked up can be released.',
       );
     }
+    this.notify?.released(orderId);
     this.dispatch.kick();
     return this.state(riderId);
   }

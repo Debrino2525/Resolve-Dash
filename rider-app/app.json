@@ -2,7 +2,7 @@
   "expo": {
     "name": "GhanaDash Rider",
     "slug": "ghanadash-rider",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "ghanadash-rider",
@@ -30,19 +30,9 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.VIBRATE",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
-        "android.permission.RECORD_AUDIO"
-      ],
-      "blockedPermissions": [
-        "ACCESS_BACKGROUND_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -59,8 +49,10 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "GhanaDash shows your position on the map and guides you to pickups and drop-offs while you are on duty.",
-          "isAndroidBackgroundLocationEnabled": false,
-          "isIosBackgroundLocationEnabled": false
+          "locationAlwaysAndWhenInUsePermission": "While you are online or on a delivery, GhanaDash shares your location even when your screen is off, so you keep getting orders and your customer can follow their package. It stops when you go offline.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       "expo-secure-store",
@@ -80,7 +72,17 @@
           "backgroundColor": "#0D121A"
         }
       ],
-      "@rnmapbox/maps"
+      "@rnmapbox/maps",
+      [
+        "expo-notifications",
+        {
+          "color": "#00C853",
+          "sounds": [
+            "./assets/sounds/new-order.wav",
+            "./assets/sounds/ring.wav"
+          ]
+        }
+      ]
     ],
     "icon": "./assets/images/icon.png",
     "owner": "resolvedash",

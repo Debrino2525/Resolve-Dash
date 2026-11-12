@@ -222,6 +222,15 @@ export async function updatePresence(update: PresenceUpdate): Promise<DispatchSt
   });
 }
 
+/** Where the server sends this phone's push notifications (Expo push token). */
+export async function registerPushToken(token: string, app: 'rider', platform: 'ios' | 'android'): Promise<void> {
+  await authenticatedFetch<void>('/push/token', { method: 'PUT', body: JSON.stringify({ token, app, platform }) });
+}
+
+export async function unregisterPushToken(token: string): Promise<void> {
+  await authenticatedFetch<void>('/push/token', { method: 'DELETE', body: JSON.stringify({ token }) });
+}
+
 export async function getDispatchState(): Promise<DispatchState> {
   return authenticatedFetch<DispatchState>('/riders/me/dispatch', { method: 'GET' });
 }

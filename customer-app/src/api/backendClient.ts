@@ -143,6 +143,13 @@ export const listOrders = (): Promise<CustomerOrder[]> => api('/orders');
 
 export const getOrder = (id: string): Promise<CustomerOrder> => api(`/orders/${id}`);
 
+/** Where the server sends this phone's push notifications (Expo push token). */
+export const registerPushToken = (token: string, platform: 'ios' | 'android'): Promise<void> =>
+  api('/push/token', { method: 'PUT', body: JSON.stringify({ token, app: 'customer', platform }) });
+
+export const unregisterPushToken = (token: string): Promise<void> =>
+  api('/push/token', { method: 'DELETE', body: JSON.stringify({ token }) });
+
 export const cancelOrder = (id: string, reason?: string): Promise<CustomerOrder> =>
   api(`/orders/${id}/cancel`, { method: 'POST', body: JSON.stringify(reason ? { reason } : {}) });
 

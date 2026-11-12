@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { rememberWantOnline, startBackgroundTracking, stopBackgroundTracking } from './backgroundLocation';
 import {
   acceptOffer,
   ApiError,
@@ -52,6 +53,7 @@ export function useDispatch(position: LatLng | null): DispatchControls {
 
   const apply = useCallback((s: DispatchState) => {
     wantOnline.current = s.online;
+    void rememberWantOnline(s.online);
     setState(s);
   }, []);
 
@@ -73,6 +75,14 @@ export function useDispatch(position: LatLng | null): DispatchControls {
   }, [refresh]);
 
   const tracking = Boolean(state?.online || state?.job);
+  const onJob = Boolean(state?.job);
+
+  // Keep reporting with the screen off while online or on a delivery; stop when neither.
+  useEffect(() => {
+    if (state === null) return;
+    if (tracking) void startBackgroundTracking(onJob);
+    else void stopBackgroundTracking();
+  }, [tracking, onJob, state === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Heartbeat: position up, offers and job down.
   useEffect(() => {

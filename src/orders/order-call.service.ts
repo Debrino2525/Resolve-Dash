@@ -3,9 +3,11 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { RtcRole, RtcTokenBuilder } from 'agora-token';
+import { DeliveryNotifier } from './delivery-notifier';
 import { OrderRepository } from './order.repository';
 import { DeliveryOrder, OrderStatus } from './order.types';
 
@@ -74,7 +76,10 @@ export class OrderCallService {
   private readonly calls = new Map<string, CallSession>();
   now: () => number = () => Date.now();
 
-  constructor(private readonly orders: OrderRepository) {}
+  constructor(
+    private readonly orders: OrderRepository,
+    @Optional() private readonly notify?: DeliveryNotifier,
+  ) {}
 
   /** The other person on the delivery calls; start ringing. */
   async start(userId: string, orderId: string): Promise<CallJoin> {
@@ -98,6 +103,7 @@ export class OrderCallService {
       endReason: null,
     };
     this.calls.set(orderId, session);
+    this.notify?.incomingCall(order, role);
     return this.join(session, role, order);
   }
 

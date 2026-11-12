@@ -2,7 +2,7 @@
   "expo": {
     "name": "GhanaDash",
     "slug": "ghanadash",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ghanadash",
@@ -33,17 +33,9 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
-        "ACCESS_BACKGROUND_LOCATION",
         "ACCESS_BACKGROUND_LOCATION"
       ]
     },
@@ -82,7 +74,16 @@
           "microphonePermission": "GhanaDash uses the microphone only during in-app calls between a customer and their rider."
         }
       ],
-      "@rnmapbox/maps"
+      "@rnmapbox/maps",
+      [
+        "expo-notifications",
+        {
+          "color": "#00C853",
+          "sounds": [
+            "./assets/sounds/ring.wav"
+          ]
+        }
+      ]
     ],
     "icon": "./assets/images/icon.png",
     "owner": "resolvedash",

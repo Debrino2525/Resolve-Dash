@@ -15,3 +15,7 @@ coverage/
 *.apk
 *.aab
 certs/
+
+# Firebase config for Android push (kept out of git; EAS uses GOOGLE_SERVICES_JSON)
+google-services.json
+GoogleService-Info.plist
